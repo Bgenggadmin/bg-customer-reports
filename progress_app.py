@@ -7,30 +7,42 @@ from PIL import Image
 # 1. PAGE SETUP
 st.set_page_config(page_title="B&G Progress Hub", layout="wide")
 
-# --- CUSTOMER & JOB DROPDOWNS (Edit these lists as needed) ---
-CUSTOMER_LIST = ["Divis Laboratories", "Dr. Reddy's", "Aurobindo Pharma", "Hetero Drugs", "Other"]
-EQUIPMENT_LIST = ["Reactor", "Receiver", "Heat Exchanger", "Storage Tank", "Agitator", "Other"]
-JOB_CODE_LIST = ["BG-234", "BG-235", "BG-500", "BG-501", "New Entry"]
-
 try:
     from fpdf import FPDF
 except ImportError:
     st.error("Missing 'fpdf2' in requirements.txt")
     st.stop()
 
-# Memory for multiple equipment entries
+# --- DYNAMIC LIST MANAGEMENT ---
+if 'customer_list' not in st.session_state:
+    st.session_state.customer_list = ["Divis Laboratories", "Dr. Reddy's", "Aurobindo Pharma"]
+if 'job_list' not in st.session_state:
+    st.session_state.job_list = ["BG-234", "BG-235", "BG-500"]
 if 'all_jobs' not in st.session_state:
     st.session_state.all_jobs = []
 
+# Sidebar for Dynamic Entry
+st.sidebar.header("⚙️ Data Management")
+new_cust = st.sidebar.text_input("➕ Add New Customer")
+if st.sidebar.button("Add Customer"):
+    if new_cust and new_cust not in st.session_state.customer_list:
+        st.session_state.customer_list.append(new_cust)
+
+new_job = st.sidebar.text_input("➕ Add New Job Code")
+if st.sidebar.button("Add Job Code"):
+    if new_job and new_job not in st.session_state.job_list:
+        st.session_state.job_list.append(new_job)
+
+# --- PDF CLASS ---
 class BG_Report(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
             self.image("logo.png", 10, 8, 33)
         self.set_font("Helvetica", "B", 16)
-        self.cell(80) 
-        self.cell(110, 10, "B&G ENGINEERING INDUSTRIES", align='R', new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 10, "B&G ENGINEERING INDUSTRIES", align='R', new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "I", 10)
-        self.cell(0, 5, "PROJECT PROGRESS REPORT", align='R', new_x="LMARGIN", new_y="NEXT")
+        # Indian Date Format in Header
+        self.cell(0, 5, f"PROJECT PROGRESS REPORT - {date.today().strftime('%d-%m-%Y')}", align='R', new_x="LMARGIN", new_y="NEXT")
         self.ln(15)
 
     def footer(self):
@@ -46,33 +58,32 @@ def process_photo(uploaded_file):
     img.save(img_byte_arr, format='JPEG', quality=60)
     return img_byte_arr
 
-st.title("🏗️ B&G Multi-Equipment Dispatcher")
+st.title("🏗️ B&G Professional Dispatcher")
 
-# Global Customer Selection
-selected_customer = st.selectbox("Select Customer Name", CUSTOMER_LIST)
-if selected_customer == "Other":
-    selected_customer = st.text_input("Enter New Customer Name")
+# Global Report Details
+c_col1, c_col2 = st.columns(2)
+with c_col1:
+    selected_customer = st.selectbox("Select Customer Name", st.session_state.customer_list)
+with c_col2:
+    submitted_by = st.text_input("Report Submitted By (Engineer Name)")
 
-with st.expander("➕ Add New Equipment / Job to Report", expanded=True):
+st.divider()
+
+# Equipment Entry Form
+with st.expander("➕ Add Equipment Details to Report", expanded=True):
     with st.form("main_form", clear_on_submit=True):
-        st.subheader("📋 Project & Equipment Identity")
-        c1, c2 = st.columns(2)
-        with c1:
-            equipment_name = st.selectbox("Equipment Name", EQUIPMENT_LIST)
-            if equipment_name == "Other":
-                equipment_name = st.text_input("Enter Equipment Name")
-            job_code = st.selectbox("B&G Job Code", JOB_CODE_LIST)
-            if job_code == "New Entry":
-                job_code = st.text_input("Enter New Job Code")
-        with c2:
+        st.subheader("📋 Equipment & PO Details")
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            equipment_name = st.text_input("Equipment Name (e.g. 5KL Reactor)")
+            job_code = st.selectbox("B&G Job Code", st.session_state.job_list)
+        with f2:
             item_code = st.text_input("Customer Item Code / ERP No.")
             po_no = st.text_input("PO Number")
-
-        st.subheader("📅 PO & Schedule")
-        p1, p2, p3 = st.columns(3)
-        with p1: po_date = st.date_input("PO Date", value=date.today())
-        with p2: target_dispatch = st.date_input("Target Dispatch")
-        with p3: revised_dispatch = st.date_input("Revised Dispatch (If any)")
+        with f3:
+            po_date = st.date_input("PO Date", format="DD/MM/YYYY")
+            target_dispatch = st.date_input("Target Dispatch Date", format="DD/MM/YYYY")
+            revised_dispatch = st.date_input("Revised Dispatch Date", format="DD/MM/YYYY")
 
         st.divider()
         st.subheader("📊 Work Progress (9 Milestones)")
@@ -88,16 +99,15 @@ with st.expander("➕ Add New Equipment / Job to Report", expanded=True):
                 ms_results[m] = {"status": s, "remark": r}
 
         st.divider()
-        st.subheader("📸 Progress Photos")
-        cam_photo = st.camera_input("📷 Take Photo")
-        uploaded_files = st.file_uploader("📁 Upload Gallery", accept_multiple_files=True)
+        pics = st.file_uploader("Upload Progress Photos", accept_multiple_files=True)
+        cam = st.camera_input("Take Shop Floor Photo")
         
-        add_item = st.form_submit_button("✅ Add This Equipment to Report")
+        add_item = st.form_submit_button("✅ Add This Item")
 
         if add_item:
             all_pics = []
-            if cam_photo: all_pics.append(cam_photo)
-            if uploaded_files: all_pics.extend(uploaded_files)
+            if cam: all_pics.append(cam)
+            if pics: all_pics.extend(pics)
             
             st.session_state.all_jobs.append({
                 "eq": equipment_name, "job": job_code, "item": item_code,
@@ -106,17 +116,17 @@ with st.expander("➕ Add New Equipment / Job to Report", expanded=True):
             })
             st.success(f"Added {equipment_name} to the list!")
 
-# Review and Generate
+# Review and Download
 if st.session_state.all_jobs:
     st.subheader(f"Current Report Items for {selected_customer}")
     for i, item in enumerate(st.session_state.all_jobs):
         st.write(f"{i+1}. {item['eq']} (Job: {item['job']})")
 
-    if st.button("🗑️ Clear All Items"):
+    if st.button("🗑️ Clear List"):
         st.session_state.all_jobs = []
         st.rerun()
 
-    if st.button("🔨 Generate Combined PDF Report"):
+    if st.button("🔨 Generate Final PDF"):
         try:
             pdf = BG_Report()
             for item in st.session_state.all_jobs:
@@ -130,10 +140,11 @@ if st.session_state.all_jobs:
                     pdf.cell(45, 10, l2, 1, 0, 'L', True)
                     pdf.cell(50, 10, str(v2), 1, 1)
 
+                # All dates converted to DD-MM-YYYY for PDF
                 draw_row("Customer", selected_customer, "Equipment", item['eq'])
-                draw_row("Job Code", item['job'], "ERP Item Code", item['item'])
-                draw_row("PO No.", item['po'], "PO Date", item['po_date'])
-                draw_row("Target Dispatch", item['target'], "Revised Dispatch", item['revised'])
+                draw_row("Job Code", item['job'], "Submitted By", submitted_by)
+                draw_row("PO No.", item['po'], "PO Date", item['po_date'].strftime("%d-%m-%Y"))
+                draw_row("Target Dispatch", item['target'].strftime("%d-%m-%Y"), "Revised Dispatch", item['revised'].strftime("%d-%m-%Y"))
 
                 pdf.ln(5)
                 pdf.set_font("Helvetica", "B", 11)
@@ -149,13 +160,12 @@ if st.session_state.all_jobs:
                     pdf.set_font("Helvetica", "B", 14)
                     pdf.cell(0, 10, f"Photo: {item['eq']} - {i+1}", align='C', new_x="LMARGIN", new_y="NEXT")
                     img_proc = process_photo(p)
-                    temp_name = f"temp_{item['job']}_{i}.jpg"
-                    with open(temp_name, "wb") as f: f.write(img_proc.getvalue())
-                    pdf.image(temp_name, x=20, y=35, w=170)
-                    os.remove(temp_name)
+                    t_name = f"t_{item['job']}_{i}.jpg"
+                    with open(t_name, "wb") as f: f.write(img_proc.getvalue())
+                    pdf.image(t_name, x=20, y=35, w=170)
+                    os.remove(t_name)
 
             pdf_bytes = bytes(pdf.output())
-            st.download_button("📥 Download Combined PDF", data=pdf_bytes, file_name=f"BG_Combined_Report.pdf", mime="application/pdf")
-            st.success("PDF Ready!")
+            st.download_button("📥 Download PDF", data=pdf_bytes, file_name=f"BG_Report_{selected_customer}.pdf", mime="application/pdf")
         except Exception as e:
             st.error(f"Error: {e}")
