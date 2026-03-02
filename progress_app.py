@@ -41,7 +41,6 @@ class BG_Report(FPDF):
         self.set_font("Helvetica", "B", 16)
         self.cell(0, 10, "B&G ENGINEERING INDUSTRIES", align='R', new_x="LMARGIN", new_y="NEXT")
         self.set_font("Helvetica", "I", 10)
-        # Indian Date Format in Header
         self.cell(0, 5, f"PROJECT PROGRESS REPORT - {date.today().strftime('%d-%m-%Y')}", align='R', new_x="LMARGIN", new_y="NEXT")
         self.ln(15)
 
@@ -112,41 +111,42 @@ with st.expander("➕ Add Equipment Details to Report", expanded=True):
             st.session_state.all_jobs.append({
                 "eq": equipment_name, "job": job_code, "item": item_code,
                 "po": po_no, "po_date": po_date, "target": target_dispatch, "revised": revised_dispatch,
-                "milestones": ms_results, "photos": all_pics
+                "milestones": ms_results, "photos": all_pics, "sub_by": submitted_by
             })
             st.success(f"Added {equipment_name} to the list!")
 
-# Review and Download
-# --- REVIEW, LOG SUMMARY & DOWNLOAD ---
+# --- FULL LOG SUMMARY AT BOTTOM ---
 if st.session_state.all_jobs:
     st.divider()
-    st.subheader(f"📋 Log Summary for {selected_customer}")
+    st.subheader(f"📋 Full Log Summary: {selected_customer}")
     
-    # Create a list of dictionaries for the table
-    log_data = []
+    # Building a complete data list for the summary table
+    summary_data = []
     for item in st.session_state.all_jobs:
-        # We pick the most important fields for the summary table
-        log_data.append({
+        # Flattening milestone statuses for the table view
+        row = {
             "Equipment": item['eq'],
             "Job Code": item['job'],
-            "PO Number": item['po'],
-            "Target Dispatch": item['target'].strftime("%d-%m-%Y"),
+            "ERP Code": item['item'],
+            "PO No": item['po'],
+            "PO Date": item['po_date'].strftime("%d-%m-%Y"),
+            "Target Date": item['target'].strftime("%d-%m-%Y"),
+            "Revised Date": item['revised'].strftime("%d-%m-%Y"),
             "Fab. Status": item['milestones']['Fabrication Status']['status'],
             "Testing": item['milestones']['Testing']['status'],
             "Photos": len(item['photos'])
-        })
+        }
+        summary_data.append(row)
     
-    # Display as a clean table
-    st.table(log_data)
+    # Display full table
+    st.dataframe(summary_data, use_container_width=True)
 
-    # Action Buttons
-    col_btn1, col_btn2 = st.columns([1, 5])
-    with col_btn1:
-        if st.button("🗑️ Clear List"):
+    c1, c2 = st.columns([1, 4])
+    with c1:
+        if st.button("🗑️ Clear All Items"):
             st.session_state.all_jobs = []
             st.rerun()
-    
-    with col_btn2:
+    with c2:
         if st.button("🔨 Generate Final PDF"):
             try:
                 pdf = BG_Report()
@@ -162,7 +162,7 @@ if st.session_state.all_jobs:
                         pdf.cell(50, 10, str(v2), 1, 1)
 
                     draw_row("Customer", selected_customer, "Equipment", item['eq'])
-                    draw_row("Job Code", item['job'], "Submitted By", submitted_by)
+                    draw_row("Job Code", item['job'], "Submitted By", item['sub_by'])
                     draw_row("PO No.", item['po'], "PO Date", item['po_date'].strftime("%d-%m-%Y"))
                     draw_row("Target Dispatch", item['target'].strftime("%d-%m-%Y"), "Revised Dispatch", item['revised'].strftime("%d-%m-%Y"))
 
@@ -187,6 +187,5 @@ if st.session_state.all_jobs:
 
                 pdf_bytes = bytes(pdf.output())
                 st.download_button("📥 Download PDF", data=pdf_bytes, file_name=f"BG_Report_{selected_customer}.pdf", mime="application/pdf")
-                st.success("✅ PDF Generated Successfully!")
             except Exception as e:
                 st.error(f"Error: {e}")
