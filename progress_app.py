@@ -76,11 +76,12 @@ with st.expander("➕ Add Equipment Details to Report", expanded=True):
         with f1:
             equipment_name = st.text_input("Equipment Name (e.g. 5KL Reactor)")
             job_code = st.selectbox("B&G Job Code", st.session_state.job_list)
-        with f2:
             item_code = st.text_input("Customer Item Code / ERP No.")
+        with f2:
             po_no = st.text_input("PO Number")
-        with f3:
             po_date = st.date_input("PO Date", format="DD/MM/YYYY")
+            po_disp_date = st.date_input("PO Dispatch Date", format="DD/MM/YYYY")
+        with f3:
             target_dispatch = st.date_input("Target Dispatch Date", format="DD/MM/YYYY")
             revised_dispatch = st.date_input("Revised Dispatch Date", format="DD/MM/YYYY")
 
@@ -110,7 +111,8 @@ with st.expander("➕ Add Equipment Details to Report", expanded=True):
             
             st.session_state.all_jobs.append({
                 "eq": equipment_name, "job": job_code, "item": item_code,
-                "po": po_no, "po_date": po_date, "target": target_dispatch, "revised": revised_dispatch,
+                "po": po_no, "po_date": po_date, "po_disp": po_disp_date, 
+                "target": target_dispatch, "revised": revised_dispatch,
                 "milestones": ms_results, "photos": all_pics, "sub_by": submitted_by
             })
             st.success(f"Added {equipment_name} to the list!")
@@ -120,16 +122,15 @@ if st.session_state.all_jobs:
     st.divider()
     st.subheader(f"📋 Full Log Summary: {selected_customer}")
     
-    # Building a complete data list for the summary table
     summary_data = []
     for item in st.session_state.all_jobs:
-        # Flattening milestone statuses for the table view
         row = {
             "Equipment": item['eq'],
             "Job Code": item['job'],
             "ERP Code": item['item'],
             "PO No": item['po'],
             "PO Date": item['po_date'].strftime("%d-%m-%Y"),
+            "PO Disp Date": item['po_disp'].strftime("%d-%m-%Y"),
             "Target Date": item['target'].strftime("%d-%m-%Y"),
             "Revised Date": item['revised'].strftime("%d-%m-%Y"),
             "Fab. Status": item['milestones']['Fabrication Status']['status'],
@@ -138,7 +139,6 @@ if st.session_state.all_jobs:
         }
         summary_data.append(row)
     
-    # Display full table
     st.dataframe(summary_data, use_container_width=True)
 
     c1, c2 = st.columns([1, 4])
@@ -163,7 +163,8 @@ if st.session_state.all_jobs:
 
                     draw_row("Customer", selected_customer, "Equipment", item['eq'])
                     draw_row("Job Code", item['job'], "Submitted By", item['sub_by'])
-                    draw_row("PO No.", item['po'], "PO Date", item['po_date'].strftime("%d-%m-%Y"))
+                    draw_row("ERP Item Code", item['item'], "PO No.", item['po'])
+                    draw_row("PO Date", item['po_date'].strftime("%d-%m-%Y"), "PO Disp Date", item['po_disp'].strftime("%d-%m-%Y"))
                     draw_row("Target Dispatch", item['target'].strftime("%d-%m-%Y"), "Revised Dispatch", item['revised'].strftime("%d-%m-%Y"))
 
                     pdf.ln(5)
