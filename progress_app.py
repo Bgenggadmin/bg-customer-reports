@@ -117,55 +117,76 @@ with st.expander("➕ Add Equipment Details to Report", expanded=True):
             st.success(f"Added {equipment_name} to the list!")
 
 # Review and Download
+# --- REVIEW, LOG SUMMARY & DOWNLOAD ---
 if st.session_state.all_jobs:
-    st.subheader(f"Current Report Items for {selected_customer}")
-    for i, item in enumerate(st.session_state.all_jobs):
-        st.write(f"{i+1}. {item['eq']} (Job: {item['job']})")
+    st.divider()
+    st.subheader(f"📋 Log Summary for {selected_customer}")
+    
+    # Create a list of dictionaries for the table
+    log_data = []
+    for item in st.session_state.all_jobs:
+        # We pick the most important fields for the summary table
+        log_data.append({
+            "Equipment": item['eq'],
+            "Job Code": item['job'],
+            "PO Number": item['po'],
+            "Target Dispatch": item['target'].strftime("%d-%m-%Y"),
+            "Fab. Status": item['milestones']['Fabrication Status']['status'],
+            "Testing": item['milestones']['Testing']['status'],
+            "Photos": len(item['photos'])
+        })
+    
+    # Display as a clean table
+    st.table(log_data)
 
-    if st.button("🗑️ Clear List"):
-        st.session_state.all_jobs = []
-        st.rerun()
-
-    if st.button("🔨 Generate Final PDF"):
-        try:
-            pdf = BG_Report()
-            for item in st.session_state.all_jobs:
-                pdf.add_page()
-                pdf.set_fill_color(240, 240, 240)
-                pdf.set_font("Helvetica", "B", 10)
-                
-                def draw_row(l1, v1, l2, v2):
-                    pdf.cell(45, 10, l1, 1, 0, 'L', True)
-                    pdf.cell(50, 10, str(v1), 1, 0)
-                    pdf.cell(45, 10, l2, 1, 0, 'L', True)
-                    pdf.cell(50, 10, str(v2), 1, 1)
-
-                # All dates converted to DD-MM-YYYY for PDF
-                draw_row("Customer", selected_customer, "Equipment", item['eq'])
-                draw_row("Job Code", item['job'], "Submitted By", submitted_by)
-                draw_row("PO No.", item['po'], "PO Date", item['po_date'].strftime("%d-%m-%Y"))
-                draw_row("Target Dispatch", item['target'].strftime("%d-%m-%Y"), "Revised Dispatch", item['revised'].strftime("%d-%m-%Y"))
-
-                pdf.ln(5)
-                pdf.set_font("Helvetica", "B", 11)
-                pdf.cell(60, 8, "Milestone", 1, 0, 'C', True)
-                pdf.cell(40, 8, "Status", 1, 0, 'C', True)
-                pdf.cell(90, 8, "Remarks", 1, 1, 'C', True)
-                pdf.set_font("Helvetica", "", 9)
-                for m, data in item['milestones'].items():
-                    pdf.cell(60, 8, m, 1); pdf.cell(40, 8, data['status'], 1); pdf.cell(90, 8, data['remark'], 1, 1)
-
-                for i, p in enumerate(item['photos']):
+    # Action Buttons
+    col_btn1, col_btn2 = st.columns([1, 5])
+    with col_btn1:
+        if st.button("🗑️ Clear List"):
+            st.session_state.all_jobs = []
+            st.rerun()
+    
+    with col_btn2:
+        if st.button("🔨 Generate Final PDF"):
+            try:
+                pdf = BG_Report()
+                for item in st.session_state.all_jobs:
                     pdf.add_page()
-                    pdf.set_font("Helvetica", "B", 14)
-                    pdf.cell(0, 10, f"Photo: {item['eq']} - {i+1}", align='C', new_x="LMARGIN", new_y="NEXT")
-                    img_proc = process_photo(p)
-                    t_name = f"t_{item['job']}_{i}.jpg"
-                    with open(t_name, "wb") as f: f.write(img_proc.getvalue())
-                    pdf.image(t_name, x=20, y=35, w=170)
-                    os.remove(t_name)
+                    pdf.set_fill_color(240, 240, 240)
+                    pdf.set_font("Helvetica", "B", 10)
+                    
+                    def draw_row(l1, v1, l2, v2):
+                        pdf.cell(45, 10, l1, 1, 0, 'L', True)
+                        pdf.cell(50, 10, str(v1), 1, 0)
+                        pdf.cell(45, 10, l2, 1, 0, 'L', True)
+                        pdf.cell(50, 10, str(v2), 1, 1)
 
-            pdf_bytes = bytes(pdf.output())
-            st.download_button("📥 Download PDF", data=pdf_bytes, file_name=f"BG_Report_{selected_customer}.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(f"Error: {e}")
+                    draw_row("Customer", selected_customer, "Equipment", item['eq'])
+                    draw_row("Job Code", item['job'], "Submitted By", submitted_by)
+                    draw_row("PO No.", item['po'], "PO Date", item['po_date'].strftime("%d-%m-%Y"))
+                    draw_row("Target Dispatch", item['target'].strftime("%d-%m-%Y"), "Revised Dispatch", item['revised'].strftime("%d-%m-%Y"))
+
+                    pdf.ln(5)
+                    pdf.set_font("Helvetica", "B", 11)
+                    pdf.cell(60, 8, "Milestone", 1, 0, 'C', True)
+                    pdf.cell(40, 8, "Status", 1, 0, 'C', True)
+                    pdf.cell(90, 8, "Remarks", 1, 1, 'C', True)
+                    pdf.set_font("Helvetica", "", 9)
+                    for m, data in item['milestones'].items():
+                        pdf.cell(60, 8, m, 1); pdf.cell(40, 8, data['status'], 1); pdf.cell(90, 8, data['remark'], 1, 1)
+
+                    for i, p in enumerate(item['photos']):
+                        pdf.add_page()
+                        pdf.set_font("Helvetica", "B", 14)
+                        pdf.cell(0, 10, f"Photo: {item['eq']} - {i+1}", align='C', new_x="LMARGIN", new_y="NEXT")
+                        img_proc = process_photo(p)
+                        t_name = f"t_{item['job']}_{i}.jpg"
+                        with open(t_name, "wb") as f: f.write(img_proc.getvalue())
+                        pdf.image(t_name, x=20, y=35, w=170)
+                        os.remove(t_name)
+
+                pdf_bytes = bytes(pdf.output())
+                st.download_button("📥 Download PDF", data=pdf_bytes, file_name=f"BG_Report_{selected_customer}.pdf", mime="application/pdf")
+                st.success("✅ PDF Generated Successfully!")
+            except Exception as e:
+                st.error(f"Error: {e}")
