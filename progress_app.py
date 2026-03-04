@@ -32,29 +32,52 @@ def create_bulk_pdf(customer_name, logs_list):
     pdf = ProgressPDF()
     for log in logs_list:
         pdf.add_page()
-        pdf.set_font("helvetica", "B", 10)
-        pdf.set_fill_color(240, 240, 240)
+        pdf.set_font("helvetica", "B", 10); pdf.set_fill_color(240, 240, 240)
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
+        
+        # Table Info
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('job_code', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Submitted By", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('engineer', 'N/A')}", 1, 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_no', 'N/A')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Disp. Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
+        
+        # Add Latest Photo to PDF if available
+        try:
+            files = conn.client.storage.from_("project-photos").list()
+            job_files = sorted([f['name'] for f in files if f['name'].startswith(log.get('job_code'))], reverse=True)
+            if job_files:
+                img_url = conn.client.storage.from_("project-photos").get_public_url(job_files[0])
+                # Using a generic placeholder logic for PDF images via URL
+                pdf.ln(5)
+                pdf.cell(0, 10, "Latest Site Photo:", 0, 1)
+                pdf.image(img_url, x=10, w=100)
+                pdf.ln(5)
+        except: pass
+
         pdf.ln(5)
         ms_list = [
-            ("Drawing Submission", 'draw_sub', 'draw_sub_note'), ("Drawing Approval", 'draw_app', 'draw_app_note'),
-            ("RM Status", 'rm_status', 'rm_note'), ("Sub-deliveries Status", 'sub_del', 'sub_del_note'),
-            ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing/Finishing Status", 'buff_stat', 'buff_note'),
-            ("Testing", 'testing', 'test_note'), ("QC/Dispatch Status", 'qc_stat', 'qc_note'), ("FAT", 'fat_stat', 'fat_note')
+            ("Drawing Submission", 'draw_sub', 'draw_sub_note'),
+            ("Drawing Approval", 'draw_app', 'draw_app_note'),
+            ("RM Status", 'rm_status', 'rm_note'),
+            ("Sub-deliveries Status", 'sub_del', 'sub_del_note'),
+            ("Fabrication Status", 'fab_status', 'remarks'),
+            ("Buffing/Finishing Status", 'buff_stat', 'buff_note'),
+            ("Testing", 'testing', 'test_note'),
+            ("QC/Dispatch Status", 'qc_stat', 'qc_note'),
+            ("FAT", 'fat_stat', 'fat_note')
         ]
+        pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
+        pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
+        pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
+        pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
+        
         pdf.set_font("helvetica", "", 8)
         for label, skey, nkey in ms_list:
-            pdf.cell(70, 7, f" {label}", 1); pdf.cell(40, 7, f" {log.get(skey, 'In-Progress')}", 1); pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
+            pdf.cell(70, 7, f" {label}", 1)
+            pdf.cell(40, 7, f" {log.get(skey, 'In-Progress')}", 1)
+            pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
     return bytes(pdf.output())
 
 @st.cache_data(ttl=5)
@@ -73,7 +96,7 @@ with t1:
         col1, col2, col3 = st.columns(3)
         cust = col1.selectbox("Customer", c_list)
         job = col2.selectbox("Job Code", j_list)
-        eq = col3.text_input("Equipment (e.g., 5KL SSR)")
+        eq = col3.text_input("Equipment")
 
         col4, col5, col6 = st.columns(3)
         po_n = col4.text_input("PO No.")
@@ -102,10 +125,10 @@ with t1:
         fat_s, fat_n = custom_row("FAT", ["Pending", "Hold", "Scheduled", "In-Progress", "Completed"], "s9", "n9")
 
         st.markdown("---")
-        st.markdown("### 📸 Take Progress Photo")
-        cam_photo = st.camera_input("Capture live image from site")
+        cam_photo = st.camera_input("📸 Take Site Photo")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+            # Database Insert
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -115,16 +138,19 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
+            # Storage Upload (Fixed Syntax)
             if cam_photo:
                 path = f"{job}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
                 try:
                     conn.client.storage.from_("project-photos").upload(
-                        path=path, file=cam_photo.getvalue(),
+                        path=path, 
+                        file=cam_photo.getvalue(),
                         file_options={"content-type": "image/jpeg", "x-upsert": "true"}
                     )
-                except: pass
+                except Exception as e:
+                    st.error(f"Upload failed: {e}")
 
-            st.success("All Fields + Photo Synchronized Successfully!")
+            st.success("Synchronized Successfully!")
             st.rerun()
 
 with t2:
@@ -139,12 +165,13 @@ with t2:
         
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
+                # Fixed Photo Display in Archive
                 try:
                     files = conn.client.storage.from_("project-photos").list()
                     job_files = sorted([f['name'] for f in files if f['name'].startswith(log.get('job_code'))], reverse=True)
                     if job_files:
-                        url = conn.client.storage.from_("project-photos").get_public_url(job_files[0])
-                        st.image(url, caption="Latest Captured Photo", width=500)
+                        img_url = conn.client.storage.from_("project-photos").get_public_url(job_files[0])
+                        st.image(img_url, caption="Latest Captured Photo", width=500)
                 except: pass
                 
                 st.table([
