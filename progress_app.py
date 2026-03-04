@@ -6,11 +6,11 @@ import requests
 from io import BytesIO
 from PIL import Image
 
-# 1. SETUP (Line 10) - Fixed: Removed duplicate setup and config dots
+# 1. SETUP
 st.set_page_config(page_title="B&G Hub 2.0", layout="wide")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# 2. MASTER MAPPINGS (Line 14)
+# 2. THE MASTER MAPPING
 HEADER_FIELDS = ["customer", "job_code", "equipment", "po_no", "po_date", "engineer", "po_delivery_date", "exp_dispatch_date"]
 
 MILESTONE_MAP = [
@@ -25,14 +25,11 @@ MILESTONE_MAP = [
     ("FAT Status", "fat_stat", "fat_note")
 ]
 
-# 3. DATA FETCHING (Line 29)
-try:
-    customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
-    jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
-except:
-    customers, jobs = [], []
+# --- DATA FETCHING ---
+customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
+jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-# 4. PDF ENGINE (Line 36) - Fixed: Defined before tabs
+# --- PDF ENGINE (Placed before Tabs) ---
 def generate_pdf(logs):
     pdf = FPDF()
     for log in logs:
@@ -65,7 +62,7 @@ def generate_pdf(logs):
             pdf.cell(60, 6, label, 1); pdf.cell(35, 6, str(log.get(s_key,'-')), 1); pdf.cell(95, 6, str(log.get(n_key,'-')), 1, 1)
     return bytes(pdf.output())
 
-# 5. APP TABS (Line 66)
+# --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with tab1:
@@ -100,7 +97,7 @@ with tab1:
 
         if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
             if not f_cust or not f_job or not cam_photo:
-                st.error("Missing required data!")
+                st.error("Missing required data! Please ensure Customer, Job, and Photo are captured.")
             else:
                 entry_payload = {
                     "customer": f_cust, "job_code": f_job, "equipment": f_eq,
@@ -116,30 +113,44 @@ with tab1:
                             path=f"{new_id}.jpg", file=cam_photo.getvalue(),
                             file_options={"upsert": "true", "content-type": "image/jpeg"}
                         )
-                        st.success(f"✅ Success! Entry ID: {new_id}")
+                        st.success(f"✅ Success! Data & Photo synced for Entry ID: {new_id}")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Sync failed: {str(e)}")
 
 with tab2:
-    data_res = conn.table("progress_logs").select("*").order("id", desc=True).execute()
-    data = data_res.data if data_res.data else []
+    st.subheader("📂 Report Archive")
+    
+    # --- CUSTOMER FILTER (NEW LOGIC) ---
+    cust_list = ["All Customers"] + customers
+    selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
+    
+    # Query building based on filter
+    query = conn.table("progress_logs").select("*").order("id", desc=True)
+    if selected_cust != "All Customers":
+        query = query.eq("customer", selected_cust)
+    
+    data = query.execute().data
+    
     if data:
-        st.download_button("📥 Download Report PDF", generate_pdf(data), "BG_Report.pdf")
+        st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}.pdf")
         for log in data:
             with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
                 col_img, col_info = st.columns([1,2])
                 url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
                 col_img.image(url)
+                
                 with col_info:
                     st.write(f"**Engineer:** {log['engineer']} | **PO:** {log['po_no']}")
                     st.write(f"**Dates:** PO: {log['po_date']} | Delivery: {log['po_delivery_date']}")
+                
                 st.markdown("---")
                 for label, s_key, n_key in MILESTONE_MAP:
                     r1, r2, r3 = st.columns([2,1,3])
                     r1.write(f"**{label}**")
                     r2.write(f"🟢 {log[s_key]}" if log[s_key] in ["Completed", "Approved", "Submitted"] else f"🟡 {log[s_key]}")
                     r3.write(f"_{log[n_key]}_")
+                
                 if st.button("🗑️ Delete", key=f"del_{log['id']}"):
                     conn.table("progress_logs").delete().eq("id", log['id']).execute()
                     try: conn.client.storage.from_("progress-photos").remove([f"{log['id']}.jpg"])
@@ -148,14 +159,16 @@ with tab2:
 
 with tab3:
     st.header("🛠️ Master Data Management")
+    # ... (Keep your existing Master Data Management code here)
     col_cust, col_job = st.columns(2)
     with col_cust:
         st.subheader("👥 Customers")
-        new_cust = st.text_input("New Customer Name")
-        if st.button("➕ Add Customer"):
-            if new_cust:
-                conn.table("customer_master").insert({"name": new_cust}).execute()
-                st.rerun()
+        with st.container(border=True):
+            new_cust = st.text_input("New Customer Name", placeholder="e.g. Reliance Industries")
+            if st.button("➕ Add Customer", use_container_width=True):
+                if new_cust:
+                    conn.table("customer_master").insert({"name": new_cust}).execute()
+                    st.rerun()
         c_data = conn.table("customer_master").select("*").execute().data
         for c in sorted(c_data, key=lambda x: x['name']):
             c_row1, c_row2 = st.columns([3, 1])
@@ -163,13 +176,15 @@ with tab3:
             if c_row2.button("🗑️", key=f"del_c_{c['id']}"):
                 conn.table("customer_master").delete().eq("id", c['id']).execute()
                 st.rerun()
+
     with col_job:
         st.subheader("🔢 Job Codes")
-        new_job = st.text_input("New Job Code")
-        if st.button("➕ Add Job Code"):
-            if new_job:
-                conn.table("job_master").insert({"job_code": new_job}).execute()
-                st.rerun()
+        with st.container(border=True):
+            new_job = st.text_input("New Job Code", placeholder="e.g. BG-2024-001")
+            if st.button("➕ Add Job Code", use_container_width=True):
+                if new_job:
+                    conn.table("job_master").insert({"job_code": new_job}).execute()
+                    st.rerun()
         j_data = conn.table("job_master").select("*").execute().data
         for j in sorted(j_data, key=lambda x: x['job_code']):
             j_row1, j_row2 = st.columns([3, 1])
