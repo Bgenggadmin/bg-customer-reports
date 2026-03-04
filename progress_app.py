@@ -1,93 +1,80 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
-import io
-import os
+import io, os
 from datetime import date
 from PIL import Image
+from fpdf import FPDF
 
-# 1. INITIALIZE SUPABASE
+# 1. INITIALIZE
+st.set_page_config(page_title="B&G Progress Hub", layout="wide")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-st.set_page_config(page_title="B&G Progress Hub", layout="wide")
 st.title("🏗️ B&G Professional Dispatcher")
 
-# --- MASTER DATA FETCH ---
-# We fetch customers and jobs from Supabase instead of session_state
-try:
-    customers = conn.table("customer_master").select("name").execute().data
-    customer_list = [c['name'] for c in customers]
-    
-    jobs = conn.table("job_master").select("job_code").execute().data
-    job_list = [j['job_code'] for j in jobs]
-except:
-    customer_list, job_list = ["Error Loading"], ["Error Loading"]
+# --- FETCH MASTER LISTS FROM CLOUD ---
+def get_masters():
+    try:
+        c_data = conn.table("customer_master").select("name").execute().data
+        j_data = conn.table("job_master").select("job_code").execute().data
+        return [c['name'] for c in c_data], [j['job_code'] for j in j_data]
+    except:
+        return ["Add in Masters"], ["Add in Masters"]
 
-# --- TABBED INTERFACE ---
-tab_entry, tab_archive = st.tabs(["📝 Create Report", "📂 Report Archive"])
+customer_list, job_list = get_masters()
+
+# --- TABS ---
+tab_entry, tab_archive = st.tabs(["📝 New Progress Report", "📂 History & PDF"])
 
 with tab_entry:
-    c_col1, c_col2 = st.columns(2)
-    with c_col1:
-        selected_customer = st.selectbox("Select Customer Name", customer_list)
-    with c_col2:
-        submitted_by = st.text_input("Engineer Name")
+    with st.form("dispatch_form", clear_on_submit=True):
+        st.subheader("📋 Core Details")
+        c1, c2, c3 = st.columns(3)
+        cust = c1.selectbox("Customer", customer_list)
+        eng = c2.text_input("Engineer Name")
+        eq = c3.text_input("Equipment (e.g., 5KL Vessel)")
 
-    with st.form("main_form", clear_on_submit=True):
-        st.subheader("📋 Equipment Details")
+        st.divider()
+        st.subheader("⚙️ Job & Milestone")
         f1, f2, f3 = st.columns(3)
-        with f1:
-            eq_name = st.text_input("Equipment Name")
-            j_code = st.selectbox("Job Code", job_list)
-        with f2:
-            po_no = st.text_input("PO Number")
-            target_date = st.date_input("Target Dispatch")
-        with f3:
-            fabrication_status = st.selectbox("Fabrication Status", ["In-Progress", "Completed", "Pending"])
-            remarks = st.text_area("General Remarks")
-
-        uploaded_pics = st.file_uploader("Upload Progress Photos", accept_multiple_files=True)
+        job = f1.selectbox("Job Code", job_list)
+        po = f2.text_input("PO Number")
+        status = f3.selectbox("Status", ["In-Progress", "Fabrication", "Testing", "Dispatch Ready", "Completed"])
         
-        if st.form_submit_button("🚀 Submit to Cloud & Storage"):
-            # 1. Insert Text Data
-            report_entry = conn.table("progress_reports").insert({
-                "customer": selected_customer,
-                "engineer": submitted_by,
-                "equipment": eq_name,
-                "job_code": j_code,
-                "po_number": po_no,
-                "target_date": str(target_date),
-                "fab_status": fabrication_status,
-                "remarks": remarks
+        target = st.date_input("Target Dispatch Date")
+        remarks = st.text_area("Work Progress Remarks")
+
+        st.divider()
+        pics = st.file_uploader("Upload Shop Floor Photos", accept_multiple_files=True)
+        
+        submit = st.form_submit_button("🚀 Sync to Cloud & Save")
+
+        if submit:
+            # 1. Save Text Data
+            res = conn.table("progress_logs").insert({
+                "customer": cust, "engineer": eng, "equipment": eq,
+                "job_code": job, "po_no": po, "target_date": str(target),
+                "fab_status": status, "remarks": remarks
             }).execute()
             
-            report_id = report_entry.data[0]['id']
+            log_id = res.data[0]['id']
 
-            # 2. Upload Photos to Storage Bucket
-            if uploaded_pics:
-                for pic in uploaded_pics:
-                    file_path = f"reports/{report_id}/{pic.name}"
-                    # Upload to 'progress-photos' bucket
-                    conn.storage.from_("progress-photos").upload(file_path, pic.getvalue())
-                    
-                    # Store public URL in report_photos table
-                    img_url = conn.storage.from_("progress-photos").get_public_url(file_path)
-                    conn.table("report_photos").insert({
-                        "report_id": report_id,
-                        "photo_url": img_url
-                    }).execute()
+            # 2. Upload Photos to Storage
+            if pics:
+                for pic in pics:
+                    path = f"reports/{log_id}/{pic.name}"
+                    conn.storage.from_("progress-photos").upload(path, pic.getvalue())
             
-            st.success("Data and Photos archived in Supabase!")
+            st.success(f"Report for {eq} saved to Cloud!")
+            st.rerun()
 
 with tab_archive:
-    st.subheader("🔍 Historical Progress Logs")
-    all_reports = conn.table("progress_reports").select("*").order("created_at", desc=True).execute().data
-    if all_reports:
-        df = pd.DataFrame(all_reports)
-        st.dataframe(df, use_container_width=True)
+    st.subheader("📂 Historical Logs")
+    history = conn.table("progress_logs").select("*").order("created_at", desc=True).execute().data
+    
+    if history:
+        df = pd.DataFrame(history)
+        st.dataframe(df[['created_at', 'customer', 'equipment', 'job_code', 'fab_status']], use_container_width=True)
         
-        # Select a report to generate PDF
-        report_to_pdf = st.selectbox("Select Report to Print", df['id'])
-        if st.button("Generate PDF from Cloud"):
-            st.info(f"Generating PDF for Report ID: {report_to_pdf}...")
-            # (PDF Generation logic remains similar, fetching from 'report_photos' table)
+        st.divider()
+        st.info("To generate a PDF, select a report ID from the database history.")
