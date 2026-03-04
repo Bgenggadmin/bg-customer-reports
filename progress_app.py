@@ -116,22 +116,42 @@ with tab_entry:
                 except Exception as e:
                     st.error(f"Database Error: {e}")
 
-# --- TAB 2: HISTORY & ARCHIVE ---
+# --- TAB 2: HISTORY & ARCHIVE (UPDATED) ---
 with tab_archive:
     st.subheader("📂 Historical Logs")
     try:
         history_res = conn.table("progress_logs").select("*").order("created_at", desc=True).execute().data
         if history_res:
-            hist_df = pd.DataFrame(history_res)
-            st.dataframe(
-                hist_df[['created_at', 'customer', 'equipment', 'job_code', 'fab_status', 'remarks']], 
-                use_container_width=True, 
-                hide_index=True
-            )
+            for log in history_res:
+                # Create a nice card for each report
+                with st.expander(f"📌 {log['customer']} | {log['equipment']} | {log['created_at'][:10]}"):
+                    col_text, col_pics = st.columns([1, 1])
+                    
+                    with col_text:
+                        st.write(f"**Engineer:** {log['engineer']}")
+                        st.write(f"**Job Code:** {log['job_code']}")
+                        st.write(f"**Status:** :blue[{log['fab_status']}]")
+                        st.write(f"**Target Date:** {log['target_date']}")
+                        st.info(f"**Remarks:** {log['remarks']}")
+                    
+                    with col_pics:
+                        st.write("**Shop Floor Photos:**")
+                        # 1. List files in the specific folder for this log ID
+                        folder_path = f"reports/{log['id']}"
+                        files = conn.client.storage.from_("progress-photos").list(folder_path)
+                        
+                        if files:
+                            # 2. Display each photo found
+                            for f in files:
+                                # Get the public URL for the image
+                                img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}")
+                                st.image(img_url, use_container_width=True)
+                        else:
+                            st.caption("No photos uploaded for this report.")
         else:
             st.info("No reports found yet.")
-    except:
-        st.error("Could not load history.")
+    except Exception as e:
+        st.error(f"Could not load history: {e}")
 
 # --- TAB 3: MASTERS MANAGEMENT ---
 with tab_masters:
