@@ -1,9 +1,7 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
-import io, os
-from datetime import date
-from PIL import Image
+from datetime import datetime
 
 # 1. INITIALIZE CONNECTION & CONFIG
 st.set_page_config(page_title="B&G Progress Hub", layout="wide")
@@ -14,10 +12,12 @@ st.title("🏗️ B&G Professional Dispatcher")
 # --- DATA FETCHING ---
 def get_masters():
     try:
+        # Fetching master data from Supabase
         c_data = conn.table("customer_master").select("name").execute().data
         j_data = conn.table("job_master").select("job_code").execute().data
         return [c['name'] for c in c_data], [j['job_code'] for j in j_data]
-    except:
+    except Exception as e:
+        st.error(f"Error fetching Master Data: {e}")
         return [], []
 
 customer_list, job_list = get_masters()
@@ -29,9 +29,8 @@ tab_entry, tab_archive, tab_masters = st.tabs([
 
 # --- TAB 1: NEW PROGRESS REPORT ---
 with tab_entry:
-    # Ensure lists are not empty to avoid selectbox errors
-    safe_cust = customer_list if customer_list else ["Enter Customers in Masters"]
-    safe_jobs = job_list if job_list else ["Enter Jobs in Masters"]
+    safe_cust = customer_list if customer_list else ["Add Customers in Masters Tab"]
+    safe_jobs = job_list if job_list else ["Add Jobs in Masters Tab"]
 
     with st.form("dispatch_form", clear_on_submit=True):
         st.subheader("📋 Core Details")
@@ -53,71 +52,86 @@ with tab_entry:
         st.divider()
         st.subheader("📸 Shop Floor Media")
         
-        # Camera Input for live snapshots
+        # Inputs for photos
         cam_photo = st.camera_input("Take a Live Photo")
-        
-        # File Uploader for gallery photos
         gallery_photos = st.file_uploader("Upload from Gallery", accept_multiple_files=True)
         
         submit = st.form_submit_button("🚀 Sync to Cloud & Save")
 
         if submit:
             if not customer_list or not job_list:
-                st.error("Please add a Customer and Job Code in the Masters tab first.")
+                st.error("Missing Master Data: Add Customer/Job in Masters tab first.")
             elif not eng or not eq:
-                st.error("Please fill in Engineer Name and Equipment.")
+                st.error("Required: Please fill in Engineer Name and Equipment.")
             else:
-                # 1. Save Text Data to Supabase
-                res = conn.table("progress_logs").insert({
-                    "customer": cust, 
-                    "engineer": eng, 
-                    "equipment": eq,
-                    "job_code": job, 
-                    "po_no": po, 
-                    "target_date": str(target),
-                    "fab_status": status, 
-                    "remarks": remarks
-                }).execute()
-                
-                log_id = res.data[0]['id']
+                try:
+                    # 1. Save Text Data to Supabase
+                    res = conn.table("progress_logs").insert({
+                        "customer": cust, 
+                        "engineer": eng, 
+                        "equipment": eq,
+                        "job_code": job, 
+                        "po_no": po, 
+                        "target_date": str(target),
+                        "fab_status": status, 
+                        "remarks": remarks
+                    }).execute()
+                    
+                    log_id = res.data[0]['id']
 
-                # 2. Collect all photos
-                all_pics = []
-                if cam_photo:
-                    all_pics.append(cam_photo)
-                if gallery_photos:
-                    all_pics.extend(gallery_photos)
+                    # 2. Collect all photos
+                    all_pics = []
+                    if cam_photo:
+                        all_pics.append(cam_photo)
+                    if gallery_photos:
+                        all_pics.extend(gallery_photos)
 
-                # 3. Upload to Storage
-                if all_pics:
-                    for i, pic in enumerate(all_pics):
-                        # Use actual name or generate one for camera shots
-                        fname = getattr(pic, 'name', f"camera_shot_{i}.jpg")
-                        path = f"reports/{log_id}/{fname}"
-                        # Added file_options with upsert=True
-conn.client.storage.from_("progress-photos").upload(
-    path=path, 
-    file=pic.getvalue(), 
-    file_options={"upsert": "true"}
-)
-#      ^--- Added .client here
-                
-                st.success(f"✅ Report for {eq} successfully archived with {len(all_pics)} photos!")
-                st.balloons()
-                st.rerun()
+                    # 3. Upload to Storage via the .client
+                    if all_pics:
+                        success_count = 0
+                        for i, pic in enumerate(all_pics):
+                            # Generate a unique path: reports/ID/timestamp_filename
+                            timestamp = datetime.now().strftime("%H%M%S")
+                            orig_name = getattr(pic, 'name', f"cam_{i}.jpg")
+                            path = f"reports/{log_id}/{timestamp}_{orig_name}"
+                            
+                            try:
+                                # FIXED: Using conn.client and upsert: true
+                                conn.client.storage.from_("progress-photos").upload(
+                                    path=path, 
+                                    file=pic.getvalue(), 
+                                    file_options={"upsert": "true"}
+                                )
+                                success_count += 1
+                            except Exception as upload_err:
+                                st.error(f"Failed to upload {orig_name}: {upload_err}")
+
+                        st.success(f"✅ Report for {eq} saved! {success_count} photos synced.")
+                    else:
+                        st.success(f"✅ Report for {eq} saved (No photos).")
+                    
+                    st.balloons()
+                    # Optional: st.rerun() if you want to clear the form completely
+
+                except Exception as e:
+                    st.error(f"Database Error: {e}")
 
 # --- TAB 2: HISTORY & ARCHIVE ---
 with tab_archive:
     st.subheader("📂 Historical Logs")
-    history_res = conn.table("progress_logs").select("*").order("created_at", desc=True).execute().data
-    
-    if history_res:
-        hist_df = pd.DataFrame(history_res)
-        # Display key columns
-        st.dataframe(hist_df[['created_at', 'customer', 'equipment', 'job_code', 'fab_status', 'remarks']], 
-                     use_container_width=True, hide_index=True)
-    else:
-        st.info("No reports found yet.")
+    try:
+        history_res = conn.table("progress_logs").select("*").order("created_at", desc=True).execute().data
+        if history_res:
+            hist_df = pd.DataFrame(history_res)
+            st.dataframe(
+                hist_df[['created_at', 'customer', 'equipment', 'job_code', 'fab_status', 'remarks']], 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("No reports found yet.")
+    except:
+        st.error("Could not load history.")
 
 # --- TAB 3: MASTERS MANAGEMENT ---
 with tab_masters:
@@ -148,4 +162,4 @@ with tab_masters:
                         st.rerun()
             st.write("Current:", job_list)
     else:
-        st.info("Enter PIN '1234' to unlock Master Management.")
+        st.info("Enter PIN '1234' to edit Master Data.")
