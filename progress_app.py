@@ -2,12 +2,66 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
 from datetime import datetime, timedelta
+from fpdf import FPDF
+import requests
+from io import BytesIO
+import os
 
 # 1. INITIALIZE CONNECTION & CONFIG
-st.set_page_config(page_title="B&G Progress Hub", layout="wide")
+st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-st.title("🏗️ B&G Professional Dispatcher")
+# --- PDF GENERATION CLASS ---
+class ProgressPDF(FPDF):
+    def header(self):
+        # Add Logo if exists in the GitHub repo
+        if os.path.exists("logo.png"):
+            self.image("logo.png", 10, 8, 30)
+        self.set_font("helvetica", "B", 15)
+        self.cell(80)
+        self.cell(30, 10, "PROGRESS REPORT", 0, 0, "C")
+        self.ln(20)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font("helvetica", "I", 8)
+        self.cell(0, 10, f"Page {self.page_no()} | B&G Professional Dispatcher", 0, 0, "C")
+
+def create_pdf(log_data, photo_urls):
+    pdf = ProgressPDF()
+    pdf.add_page()
+    
+    # Header Info
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, f"Customer: {log_data['customer']}", ln=True)
+    pdf.set_font("helvetica", "", 10)
+    pdf.cell(0, 8, f"Job Code: {log_data['job_code']} | Equipment: {log_data['equipment']}", ln=True)
+    pdf.cell(0, 8, f"Status: {log_data['fab_status']} | Target: {log_data['target_date']}", ln=True)
+    pdf.ln(5)
+    
+    # Remarks
+    pdf.set_font("helvetica", "B", 10)
+    pdf.cell(0, 8, "Work Progress Remarks:", ln=True)
+    pdf.set_font("helvetica", "", 10)
+    pdf.multi_cell(0, 6, log_data['remarks'])
+    pdf.ln(10)
+
+    # Photos (2 per row)
+    if photo_urls:
+        pdf.set_font("helvetica", "B", 10)
+        pdf.cell(0, 10, "Shop Floor Media:", ln=True)
+        
+        for i, url in enumerate(photo_urls):
+            try:
+                resp = requests.get(url)
+                img = BytesIO(resp.content)
+                # Logic for 2-column layout
+                x = 10 if i % 2 == 0 else 110
+                if i > 0 and i % 2 == 0: pdf.ln(75) # New row
+                pdf.image(img, x=x, w=90)
+            except:
+                continue
+    return pdf.output()
 
 # --- DATA FETCHING ---
 def get_masters():
@@ -15,156 +69,112 @@ def get_masters():
         c_data = conn.table("customer_master").select("name").execute().data
         j_data = conn.table("job_master").select("job_code").execute().data
         return [c['name'] for c in c_data], [j['job_code'] for j in j_data]
-    except Exception as e:
-        st.error(f"Error fetching Master Data: {e}")
+    except:
         return [], []
 
 customer_list, job_list = get_masters()
 
+st.title("🏗️ B&G Professional Dispatcher")
+
 # --- TABS ---
-tab_entry, tab_archive, tab_masters = st.tabs([
-    "📝 New Progress Report", "📂 History & Weekly Reports", "🛠️ Masters"
-])
+tab_entry, tab_archive, tab_masters = st.tabs(["📝 New Entry", "📂 Weekly Archive", "🛠️ Admin Masters"])
 
-# --- TAB 1: NEW PROGRESS REPORT ---
+# --- TAB 1: NEW ENTRY ---
 with tab_entry:
-    safe_cust = customer_list if customer_list else ["Add Customers in Masters Tab"]
-    safe_jobs = job_list if job_list else ["Add Jobs in Masters Tab"]
-
     with st.form("dispatch_form", clear_on_submit=True):
-        st.subheader("📋 Core Details")
         c1, c2, c3 = st.columns(3)
-        cust = c1.selectbox("Customer", safe_cust)
+        cust = c1.selectbox("Customer", customer_list if customer_list else ["Add in Masters"])
         eng = c2.text_input("Engineer Name")
-        eq = c3.text_input("Equipment (e.g., 5KL Vessel)")
+        eq = c3.text_input("Equipment (e.g. 5KL Tank)")
 
-        st.divider()
-        st.subheader("⚙️ Job & Milestone")
         f1, f2, f3 = st.columns(3)
-        job = f1.selectbox("Job Code", safe_jobs)
-        po = f1.text_input("PO Number")
-        status = f2.selectbox("Current Status", ["In-Progress", "Fabrication", "Testing", "Dispatch Ready", "Completed"])
-        target = f3.date_input("Target Dispatch Date")
-        
-        remarks = st.text_area("Work Progress Remarks")
+        job = f1.selectbox("Job Code", job_list if job_list else ["Add in Masters"])
+        po = f2.text_input("PO Number")
+        status = f2.selectbox("Status", ["In-Progress", "Fabrication", "Testing", "Dispatch Ready", "Completed"])
+        target = f3.date_input("Target Date")
+        remarks = st.text_area("Remarks")
 
-        st.divider()
-        st.subheader("📸 Shop Floor Media")
-        cam_photo = st.camera_input("Take a Live Photo")
-        gallery_photos = st.file_uploader("Upload from Gallery", accept_multiple_files=True)
+        cam_pic = st.camera_input("Take Live Photo")
+        gal_pics = st.file_uploader("Upload Gallery Photos", accept_multiple_files=True)
         
-        submit = st.form_submit_button("🚀 Sync to Cloud & Save")
-
-        if submit:
-            if not customer_list or not job_list:
-                st.error("Missing Master Data: Add Customer/Job in Masters tab first.")
-            elif not eng or not eq:
-                st.error("Required: Please fill in Engineer Name and Equipment.")
+        if st.form_submit_button("🚀 Save & Upload"):
+            if not eng or not eq:
+                st.error("Please fill Engineer and Equipment details.")
             else:
-                try:
-                    # 1. Save Text Data
-                    res = conn.table("progress_logs").insert({
-                        "customer": cust, "engineer": eng, "equipment": eq,
-                        "job_code": job, "po_no": po, "target_date": str(target),
-                        "fab_status": status, "remarks": remarks
-                    }).execute()
-                    
-                    log_id = res.data[0]['id']
+                res = conn.table("progress_logs").insert({
+                    "customer": cust, "engineer": eng, "equipment": eq,
+                    "job_code": job, "po_no": po, "target_date": str(target),
+                    "fab_status": status, "remarks": remarks
+                }).execute()
+                log_id = res.data[0]['id']
 
-                    # 2. Collect & Upload Photos
-                    all_pics = []
-                    if cam_photo: all_pics.append(cam_photo)
-                    if gallery_photos: all_pics.extend(gallery_photos)
+                # Unified Upload Logic
+                all_media = ([cam_pic] if cam_pic else []) + (gal_pics if gal_pics else [])
+                for i, pic in enumerate(all_media):
+                    ts = datetime.now().strftime("%H%M%S")
+                    fname = getattr(pic, 'name', f"cam_{ts}_{i}.jpg")
+                    path = f"reports/{log_id}/{fname}"
+                    conn.client.storage.from_("progress-photos").upload(
+                        path=path, file=pic.getvalue(), file_options={"upsert": "true"}
+                    )
+                st.success("Cloud Sync Complete!")
+                st.balloons()
+                st.rerun()
 
-                    if all_pics:
-                        for i, pic in enumerate(all_pics):
-                            ts = datetime.now().strftime("%H%M%S")
-                            fname = getattr(pic, 'name', f"cam_{ts}_{i}.jpg")
-                            path = f"reports/{log_id}/{fname}"
-                            conn.client.storage.from_("progress-photos").upload(
-                                path=path, file=pic.getvalue(), file_options={"upsert": "true"}
-                            )
-                    
-                    st.success(f"✅ Report for {eq} saved successfully!")
-                    st.balloons()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Database Error: {e}")
-
-# --- TAB 2: HISTORY & WEEKLY REPORTS ---
+# --- TAB 2: ARCHIVE & PDF ---
 with tab_archive:
-    st.subheader("📊 Customer Weekly Review")
-    
-    # Filtering UI
-    filter_col1, filter_col2 = st.columns(2)
-    selected_cust = filter_col1.selectbox("Select Customer for Report", ["All Customers"] + customer_list)
-    
-    # Weekly Logic (Last 7 Days)
-    last_week = datetime.now() - timedelta(days=7)
-    show_only_weekly = filter_col2.checkbox("Show only last 7 days", value=True)
+    st.subheader("📊 Customer-wise Weekly Reviews")
+    col_f1, col_f2 = st.columns(2)
+    sel_cust = col_f1.selectbox("Filter by Customer", ["All"] + customer_list)
+    show_weekly = col_f2.checkbox("Show only last 7 days", value=True)
 
-    try:
-        query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-        
-        if selected_cust != "All Customers":
-            query = query.eq("customer", selected_cust)
-        if show_only_weekly:
-            query = query.gte("created_at", last_week.isoformat())
-            
-        history_res = query.execute().data
+    query = conn.table("progress_logs").select("*").order("created_at", desc=True)
+    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    if show_weekly: query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
+    
+    data = query.execute().data
+    if data:
+        for log in data:
+            with st.expander(f"📦 {log['equipment']} ({log['job_code']}) - {log['created_at'][:10]}"):
+                t_col, p_col = st.columns([1,1])
+                photo_urls = []
+                # Fetch Photos
+                folder = f"reports/{log['id']}"
+                files = conn.client.storage.from_("progress-photos").list(folder)
+                for f in files:
+                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
+                    photo_urls.append(url)
 
-        if history_res:
-            st.write(f"Showing **{len(history_res)}** reports.")
-            
-            for log in history_res:
-                with st.expander(f"📦 {log['equipment']} | {log['job_code']} | Status: {log['fab_status']} ({log['created_at'][:10]})"):
-                    c_text, c_img = st.columns([1, 1])
-                    with c_text:
-                        st.markdown(f"**Customer:** {log['customer']}")
-                        st.markdown(f"**Engineer:** {log['engineer']}")
-                        st.markdown(f"**PO No:** {log['po_no']}")
-                        st.markdown(f"**Remarks:** {log['remarks']}")
+                with t_col:
+                    st.write(f"**Status:** {log['fab_status']}")
+                    st.write(f"**Engineer:** {log['engineer']}")
+                    st.info(f"Remarks: {log['remarks']}")
                     
-                    with c_img:
-                        f_path = f"reports/{log['id']}"
-                        files = conn.client.storage.from_("progress-photos").list(f_path)
-                        if files:
-                            # Display photos in a grid
-                            cols = st.columns(2)
-                            for idx, f in enumerate(files):
-                                url = conn.client.storage.from_("progress-photos").get_public_url(f"{f_path}/{f['name']}")
-                                cols[idx % 2].image(url, use_container_width=True)
-                        else:
-                            st.caption("No photos available.")
-        else:
-            st.info("No reports found for the selected criteria.")
-            
-    except Exception as e:
-        st.error(f"Error loading archive: {e}")
+                    # PDF Download
+                    if st.button("Generate PDF", key=f"pdf_{log['id']}"):
+                        pdf_out = create_pdf(log, photo_urls)
+                        st.download_button("📥 Download Now", data=pdf_out, 
+                                         file_name=f"Report_{log['job_code']}.pdf", mime="application/pdf")
 
-# --- TAB 3: MASTERS MANAGEMENT ---
+                with p_col:
+                    if photo_urls:
+                        st.image(photo_urls, use_container_width=True)
+    else:
+        st.info("No logs found for this selection.")
+
+# --- TAB 3: ADMIN ---
 with tab_masters:
-    st.subheader("⚙️ Master Data Management")
-    admin_pin = st.text_input("Enter Admin PIN", type="password")
-    
-    if admin_pin == "1234":
-        st.success("Access Granted")
+    if st.text_input("Admin PIN", type="password") == "1234":
         m1, m2 = st.columns(2)
         with m1:
-            st.write("### 🏢 Customers")
-            with st.form("add_cust", clear_on_submit=True):
-                n_cust = st.text_input("New Customer Name")
-                if st.form_submit_button("Add Customer") and n_cust:
-                    conn.table("customer_master").insert({"name": n_cust}).execute()
+            with st.form("add_c"):
+                n = st.text_input("New Customer")
+                if st.form_submit_button("Add") and n:
+                    conn.table("customer_master").insert({"name": n}).execute()
                     st.rerun()
-            st.write("List:", customer_list)
         with m2:
-            st.write("### 🔢 Job Codes")
-            with st.form("add_job", clear_on_submit=True):
-                n_job = st.text_input("New Job Code")
-                if st.form_submit_button("Add Job") and n_job:
-                    conn.table("job_master").insert({"job_code": n_job}).execute()
+            with st.form("add_j"):
+                n = st.text_input("New Job Code")
+                if st.form_submit_button("Add") and n:
+                    conn.table("job_master").insert({"job_code": n}).execute()
                     st.rerun()
-            st.write("List:", job_list)
-    else:
-        st.info("Enter PIN '1234' to edit Master Data.")
