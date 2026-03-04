@@ -40,16 +40,15 @@ def generate_pdf(logs):
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # --- NEW LOGO LOGIC (Inserted here) ---
+        # --- LOGO LOGIC ---
         try:
             logo_url = conn.client.storage.from_("progress-photos").get_public_url("logo.png")
             logo_res = requests.get(logo_url)
             if logo_res.status_code == 200:
-                logo_img = Image.open(BytesIO(logo_res.content))
                 pdf.image(BytesIO(logo_res.content), x=10, y=8, h=20)
         except:
             pass
-        
+
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
         pdf.cell(0, 12, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
