@@ -76,7 +76,6 @@ def create_bulk_pdf(customer_name, logs_list):
             pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
     return bytes(pdf.output())
 
-# --- DATA HELPERS ---
 @st.cache_data(ttl=5)
 def get_masters():
     try:
@@ -87,7 +86,6 @@ def get_masters():
 
 c_list, j_list = get_masters()
 
-# --- APP LAYOUT ---
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
@@ -137,7 +135,6 @@ with t1:
         fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
-            # 1. Insert Record into Database
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -148,7 +145,6 @@ with t1:
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # 2. Upload Photos
             if job_photos:
                 for photo in job_photos:
                     path = f"{job}_{photo.name}"
@@ -159,7 +155,7 @@ with t1:
                             file_options={"content-type": photo.type}
                         )
                     except Exception as e:
-                        st.error(f"Upload failed for {photo.name}: {e}")
+                        st.error(f"Upload failed: {e}")
 
             st.success("24 Fields + Photos Synchronized Successfully!")
             st.rerun()
@@ -175,7 +171,24 @@ with t2:
             st.download_button("📥 Download Official PDF", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
         
         for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
+            current_job = log.get('job_code')
+            with st.expander(f"📦 Job: {current_job} | Eq: {log.get('equipment')}"):
+                
+                # --- PHOTO GALLERY LOGIC ---
+                try:
+                    # List files in storage that start with the job code
+                    files = conn.client.storage.from_("project-photos").list()
+                    job_files = [f['name'] for f in files if f['name'].startswith(current_job)]
+                    
+                    if job_files:
+                        st.markdown("#### 📷 Progress Photos")
+                        cols = st.columns(len(job_files))
+                        for idx, f_name in enumerate(job_files):
+                            img_url = conn.client.storage.from_("project-photos").get_public_url(f_name)
+                            cols[idx].image(img_url, use_container_width=True)
+                except:
+                    pass # Silently skip if storage access fails
+                
                 st.table([
                     {"Milestone": "Drawing Submission", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
