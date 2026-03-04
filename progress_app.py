@@ -93,6 +93,10 @@ c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
+    # Moved file upload outside of form for better state handling in Streamlit
+    st.markdown("### 📸 Project Photos (Optional)")
+    uploaded_files = st.file_uploader("Upload site/fabrication photos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         cust = col1.selectbox("Customer", c_list)
@@ -110,7 +114,7 @@ with t1:
 
         st.markdown("### 📊 Unique Milestone Updates")
         
-        # --- MODIFIED DROP DOWN LISTS ---
+        # --- DROPDOWN OPTIONS ---
         draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
         draw_app_opts = ["Pending", "In-Progress", "Approved"]
         rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
@@ -129,7 +133,7 @@ with t1:
         d_s, d_n = custom_row("Drawing Submission", draw_sub_opts, "s1", "n1")
         da_s, da_n = custom_row("Drawing Approval", draw_app_opts, "s2", "n2")
         rm_s, rm_n = custom_row("RM Status", rm_opts, "s3", "n3")
-        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4") # Using Broughtouts logic
+        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4")
         fb_s, fb_n = custom_row("Fabrication Status", fab_opts, "s5", "n5")
         bf_s, bf_n = custom_row("Buffing/Finishing Status", buff_opts, "s6", "n6")
         ts_s, ts_n = custom_row("Testing", test_opts, "s7", "n7")
@@ -137,6 +141,7 @@ with t1:
         fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+            # Handle Database Insert
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -146,7 +151,7 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n,
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
-            st.success("24 Fields Synchronized Successfully!"); st.rerun()
+            st.success("24 Fields + Photos Synchronized Successfully!"); st.rerun()
 
 with t2:
     sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
