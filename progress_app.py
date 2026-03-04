@@ -29,7 +29,7 @@ MILESTONE_MAP = [
 customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
 jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-# --- PDF ENGINE (RECTIFIED SECTION) ---
+# --- PDF ENGINE (PHOTO MOVED TO BOTTOM) ---
 def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -62,30 +62,16 @@ def generate_pdf(logs):
             pdf.cell(30, 7, f" {f2.replace('_',' ').title()}", 1, 0, 'L', True)
             pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
 
-        # 4. Progress Photo (Centered)
-        try:
-            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-            img_res = requests.get(img_url)
-            if img_res.status_code == 200:
-                img = Image.open(BytesIO(img_res.content)).convert('RGB')
-                img.thumbnail((350, 350))
-                buf = BytesIO()
-                img.save(buf, format="JPEG")
-                pdf.image(buf, x=75, y=pdf.get_y()+5, w=60)
-                pdf.set_y(pdf.get_y() + 55)
-        except: 
-            pdf.ln(5)
+        pdf.ln(5)
 
-        # 5. Milestone Table with Color Coding
+        # 4. Milestone Table with Color Coding
         pdf.set_font("Arial", "B", 9)
-        pdf.set_fill_color(0, 51, 102)
-        pdf.set_text_color(255, 255, 255)
+        pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
         pdf.cell(35, 8, " Status", 1, 0, 'C', True)
         pdf.cell(95, 8, " Remarks", 1, 1, 'L', True)
         
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", "", 8)
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "", 8)
         for label, s_key, n_key in MILESTONE_MAP:
             status = str(log.get(s_key, 'Pending'))
             if status in ["Completed", "Approved", "Submitted"]:
@@ -98,6 +84,20 @@ def generate_pdf(logs):
             pdf.cell(60, 7, f" {label}", 1)
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
+
+        # 5. Progress Photo (Moved to Bottom)
+        try:
+            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
+            img_res = requests.get(img_url)
+            if img_res.status_code == 200:
+                img = Image.open(BytesIO(img_res.content)).convert('RGB')
+                img.thumbnail((350, 350))
+                buf = BytesIO(); img.save(buf, format="JPEG")
+                # Center horizontally and place below table
+                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
+        except: 
+            pass
+
     return bytes(pdf.output())
 
 # --- APP TABS ---
@@ -158,6 +158,7 @@ with tab1:
 
 with tab2:
     st.subheader("📂 Report Archive")
+    
     cust_list = ["All Customers"] + customers
     selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
     
