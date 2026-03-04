@@ -6,7 +6,7 @@ import requests
 from io import BytesIO
 import os
 
-# 1. INITIALIZE
+# 1. INITIALIZE CONNECTION
 st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
@@ -16,7 +16,7 @@ class ProgressPDF(FPDF):
             try: self.image("logo.png", 10, 8, 33)
             except: pass
         self.set_font("helvetica", "B", 15)
-        self.set_text_color(0, 51, 102) # Dark Blue
+        self.set_text_color(0, 51, 102) 
         self.cell(0, 10, "B&G ENGINEERING", 0, 1, "R")
         self.set_font("helvetica", "B", 8)
         self.cell(0, 5, "EVAPORATION | MIXING | DRYING", 0, 1, "R")
@@ -39,18 +39,17 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
 
-        # Primary Info Table - Using .get() to prevent KeyError
+        # Primary Info Table (Using .get() for safety)
         pdf.set_font("helvetica", "B", 9)
-        # Row 1
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
-        # Row 2
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('job_code', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Submitted By", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('engineer', 'N/A')}", 1, 1)
-        # Row 3
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_no', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
-        # Row 4
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Target Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         
@@ -74,42 +73,27 @@ def create_bulk_pdf(customer_name, logs_list):
             pdf.cell(40, 7, f" {m_val if m_val else 'In-Progress'}", 1)
             pdf.cell(80, 7, f" {log.get('remarks', '') if m_name == 'Fabrication Status' else ''}", 1, 1)
 
-        # Photos Section (Error handling added)
-        folder = f"reports/{log.get('id')}"
-        try:
-            files = conn.client.storage.from_("progress-photos").list(folder)
-            if files:
-                pdf.ln(5); pdf.set_font("helvetica", "B", 9); pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
-                y_p = pdf.get_y()
-                for i, f in enumerate(files[:2]):
-                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
-                    resp = requests.get(url, timeout=5)
-                    if resp.status_code == 200:
-                        img = BytesIO(resp.content)
-                        x = 10 if i == 0 else 105
-                        pdf.image(img, x=x, y=y_p, w=90, h=60)
-        except Exception:
-            pass
-            
-    return bytes(pdf.output())
         # Photos
-        folder = f"reports/{log['id']}"
+        folder_path = f"reports/{log.get('id')}"
         try:
-            files = conn.client.storage.from_("progress-photos").list(folder)
+            files = conn.client.storage.from_("progress-photos").list(folder_path)
             if files:
-                pdf.ln(5); pdf.set_font("helvetica", "B", 9); pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
-                y_p = pdf.get_y()
+                pdf.ln(5)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
+                y_start = pdf.get_y()
                 for i, f in enumerate(files[:2]):
-                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
-                    resp = requests.get(url, timeout=5)
+                    img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}")
+                    resp = requests.get(img_url, timeout=5)
                     if resp.status_code == 200:
-                        img = BytesIO(resp.content)
-                        x = 10 if i == 0 else 105
-                        pdf.image(img, x=x, y=y_p, w=90, h=60)
-        except: pass
+                        img_bytes = BytesIO(resp.content)
+                        x_coord = 10 if i == 0 else 105
+                        pdf.image(img_bytes, x=x_coord, y=y_start, w=90, h=60)
+        except:
+            pass
     return bytes(pdf.output())
 
-# --- DATA FETCHING ---
+# --- DATA HELPERS ---
 @st.cache_data(ttl=60)
 def get_masters():
     try:
@@ -141,20 +125,20 @@ with t1:
         rev_del = col8.date_input("Revised Dispatch Date")
 
         st.markdown("### 📊 Milestone Status Update")
-        m1, m2, m3 = st.columns(3)
-        d_sub = m1.selectbox("Drawing Submission", ["In-Progress", "Completed"])
-        d_app = m2.selectbox("Drawing Approval", ["In-Progress", "Approved"])
-        rm_s = m3.selectbox("RM Status", ["In-Progress", "Received"])
+        m_row1 = st.columns(3)
+        d_sub = m_row1[0].selectbox("Drawing Submission", ["In-Progress", "Completed"])
+        d_app = m_row1[1].selectbox("Drawing Approval", ["In-Progress", "Approved"])
+        rm_s = m_row1[2].selectbox("RM Status", ["In-Progress", "Received"])
         
-        m4, m5, m6 = st.columns(3)
-        sub_s = m4.selectbox("Sub-deliveries", ["In-Progress", "Received"])
-        fab_s = m5.selectbox("Fabrication", ["In-Progress", "Completed"])
-        buf_s = m6.selectbox("Buffing/Finishing", ["In-Progress", "Completed"])
+        m_row2 = st.columns(3)
+        sub_s = m_row2[0].selectbox("Sub-deliveries", ["In-Progress", "Received"])
+        fab_s = m_row2[1].selectbox("Fabrication", ["In-Progress", "Completed"])
+        buf_s = m_row2[2].selectbox("Buffing/Finishing", ["In-Progress", "Completed"])
         
-        m7, m8, m9 = st.columns(3)
-        test_s = m7.selectbox("Testing", ["In-Progress", "Completed"])
-        qc_s = m8.selectbox("QC Status", ["In-Progress", "Ready"])
-        fat_s = m9.selectbox("FAT", ["In-Progress", "Completed"])
+        m_row3 = st.columns(3)
+        test_s = m_row3[0].selectbox("Testing", ["In-Progress", "Completed"])
+        qc_s = m_row3[1].selectbox("QC Status", ["In-Progress", "Ready"])
+        fat_s = m_row3[2].selectbox("FAT", ["In-Progress", "Completed"])
 
         rem = st.text_area("Remarks")
         files = st.file_uploader("Upload Photos", accept_multiple_files=True)
@@ -180,15 +164,16 @@ with t2:
     data = query.execute().data
     
     if sel_cust != "All" and data:
-        if st.button(f"📥 Download {sel_cust} Official PDF Report"):
-            pdf_bytes = create_bulk_pdf(sel_cust, data)
-            st.download_button("Click to Download", pdf_bytes, f"BG_{sel_cust}_Report.pdf", "application/pdf")
+        pdf_bytes = create_bulk_pdf(sel_cust, data)
+        st.download_button(f"📥 Download {sel_cust} Official PDF Report", pdf_bytes, f"BG_{sel_cust}_Report.pdf", "application/pdf")
     
     for log in data:
-        with st.expander(f"📦 {log['job_code']} - {log['equipment']}"):
-            st.write(log) # Detailed view
+        with st.expander(f"📦 {log.get('job_code')} - {log.get('equipment')}"):
+            st.write(log)
 
-with t3: # Admin Master Access
+with t3:
     if st.text_input("PIN", type="password") == "1234":
         c_name = st.text_input("New Customer")
-        if st.button("Add"): conn.table("customer_master").insert({"name": c_name}).execute(); st.rerun()
+        if st.button("Add"): 
+            conn.table("customer_master").insert({"name": c_name}).execute()
+            st.rerun()
