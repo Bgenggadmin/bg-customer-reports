@@ -160,16 +160,67 @@ with t1:
 with t2:
     sel_cust = st.selectbox("Select Customer for Weekly Report", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    if sel_cust != "All": 
+        query = query.eq("customer", sel_cust)
     data = query.execute().data
     
     if sel_cust != "All" and data:
-        pdf_bytes = create_bulk_pdf(sel_cust, data)
-        st.download_button(f"📥 Download {sel_cust} Official PDF Report", pdf_bytes, f"BG_{sel_cust}_Report.pdf", "application/pdf")
+        if st.button(f"📥 Download {sel_cust} Official PDF Report"):
+            pdf_bytes = create_bulk_pdf(sel_cust, data)
+            st.download_button("Click to Download", pdf_bytes, f"BG_{sel_cust}_Report.pdf", "application/pdf")
     
+    st.divider()
+
     for log in data:
-        with st.expander(f"📦 {log.get('job_code')} - {log.get('equipment')}"):
-            st.write(log)
+        # Header for each job entry
+        with st.expander(f"📦 {log.get('job_code')} - {log.get('equipment')} (Status: {log.get('fab_status', 'N/A')})"):
+            
+            # 1. Primary Project Information Table (matching PDF top section)
+            st.markdown("#### 📋 Project Information")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write(f"**Customer:** {log.get('customer', 'N/A')}")
+                st.write(f"**Job Code:** {log.get('job_code', 'N/A')}")
+                st.write(f"**PO No:** {log.get('po_no', 'N/A')}")
+                st.write(f"**Target Dispatch:** {log.get('po_delivery_date', 'N/A')}")
+            with c2:
+                st.write(f"**Equipment:** {log.get('equipment', 'N/A')}")
+                st.write(f"**Submitted By:** {log.get('engineer', 'N/A')}")
+                st.write(f"**PO Date:** {log.get('po_date', 'N/A')}")
+                st.write(f"**Revised Dispatch:** {log.get('exp_dispatch_date', 'N/A')}")
+
+            # 2. Milestone Status Table (matching PDF middle section)
+            st.markdown("#### 📊 Milestone Status")
+            
+            # Create a dataframe to display milestones as a clean table
+            milestone_data = {
+                "Milestone": [
+                    "Drawing Submission", "Drawing Approval", "RM Status", 
+                    "Sub-deliveries Status", "Fabrication Status", "Buffing/Finishing", 
+                    "Testing", "QC/Dispatch Status", "FAT"
+                ],
+                "Status": [
+                    log.get('draw_sub', 'N/A'), log.get('draw_app', 'N/A'), log.get('rm_status', 'N/A'),
+                    log.get('sub_del', 'N/A'), log.get('fab_status', 'N/A'), log.get('buff_stat', 'N/A'),
+                    log.get('testing', 'N/A'), log.get('qc_stat', 'N/A'), log.get('fat_stat', 'N/A')
+                ]
+            }
+            st.table(milestone_data)
+
+            # 3. Remarks Section
+            if log.get('remarks'):
+                st.info(f"**Remarks:** {log.get('remarks')}")
+
+            # 4. Photos Preview
+            folder_path = f"reports/{log.get('id')}"
+            try:
+                files = conn.client.storage.from_("progress-photos").list(folder_path)
+                if files:
+                    st.markdown("#### 🖼️ Shop Floor Media")
+                    urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}") for f in files]
+                    st.image(urls, width=200)
+            except:
+                pass
 
 with t3:
     if st.text_input("PIN", type="password") == "1234":
