@@ -91,7 +91,6 @@ c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
-    # 📸 PHOTO OPTION ADDED HERE
     st.markdown("### 📸 Job-wise Photos")
     job_photos = st.file_uploader("Upload 2-3 Fabrication/Site Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
 
@@ -112,7 +111,6 @@ with t1:
 
         st.markdown("### 📊 Unique Milestone Updates")
         
-        # --- DROPDOWN LISTS ---
         draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
         draw_app_opts = ["Pending", "In-Progress", "Approved"]
         rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
@@ -138,7 +136,7 @@ with t1:
         qc_s, qc_n = custom_row("QC/Dispatch Status", qc_opts, "s8", "n8")
         fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
-       if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+        if st.form_submit_button("🚀 Sync All Fields to Cloud"):
             # 1. Insert Record into Database
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
@@ -150,10 +148,9 @@ with t1:
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # 2. Upload Photos using the correct client attribute
+            # 2. Upload Photos
             if job_photos:
                 for photo in job_photos:
-                    # Access storage via conn.client
                     path = f"{job}_{photo.name}"
                     try:
                         conn.client.storage.from_("project-photos").upload(
@@ -162,7 +159,7 @@ with t1:
                             file_options={"content-type": photo.type}
                         )
                     except Exception as e:
-                        st.error(f"Error uploading {photo.name}: {e}")
+                        st.error(f"Upload failed for {photo.name}: {e}")
 
             st.success("24 Fields + Photos Synchronized Successfully!")
             st.rerun()
