@@ -162,36 +162,67 @@ with t1:
             st.rerun()
 
 with t2:
-    sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
+    st.subheader("📂 Project Archive & Reports")
+    sel_cust = st.selectbox("Filter by Customer", ["All"] + c_list)
+    
+    # Fetch data
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    if sel_cust != "All": 
+        query = query.eq("customer", sel_cust)
+    
     data = query.execute().data
     
     if data:
-        if sel_cust != "All":
-            st.download_button("📥 Download Official PDF", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
-        
+        # 1. PDF DOWNLOAD BUTTON
+        # We ensure the PDF is generated specifically for the filtered list
+        pdf_label = f"BG_Report_{sel_cust}_{datetime.now().strftime('%d%m')}.pdf"
+        try:
+            pdf_bytes = create_bulk_pdf(sel_cust, data)
+            st.download_button(
+                label="📥 Download Full Progress Report (PDF)",
+                data=pdf_bytes,
+                file_name=pdf_label,
+                mime="application/pdf",
+                key="pdf_download"
+            )
+        except Exception as e:
+            st.error(f"PDF Generation Error: {e}")
+
+        st.markdown("---")
+
+        # 2. JOB CARDS WITH PHOTOS
         for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
-                # --- PHOTO GALLERY ---
+            job_id = log.get('job_code')
+            with st.expander(f"📦 Job: {job_id} | {log.get('equipment')} | {log.get('customer')}"):
+                
+                # --- PHOTO GALLERY LOGIC ---
+                st.markdown("**Site Photos:**")
                 try:
+                    # List all files in the bucket
                     all_files = conn.client.storage.from_("project-photos").list()
-                    # Filter files belonging to this specific Job Code
-                    job_files = [f['name'] for f in all_files if f['name'].startswith(log.get('job_code'))]
-                    if job_files:
-                        cols = st.columns(len(job_files))
-                        for idx, f_name in enumerate(job_files):
+                    # Find photos that start with this specific Job Code
+                    job_specific_photos = [f['name'] for f in all_files if f['name'].startswith(f"{job_id}_")]
+                    
+                    if job_specific_photos:
+                        # Display up to 4 photos in a row
+                        img_cols = st.columns(4)
+                        for idx, f_name in enumerate(job_specific_photos):
+                            # Generate a signed URL or public URL
                             img_url = conn.client.storage.from_("project-photos").get_public_url(f_name)
-                            cols[idx].image(img_url, use_container_width=True)
-                except:
-                    st.info("No photos found for this entry.")
+                            img_cols[idx % 4].image(img_url, caption=f"Photo {idx+1}", use_container_width=True)
+                    else:
+                        st.info("No photos uploaded for this specific Job Code yet.")
+                except Exception as e:
+                    st.warning(f"Could not load photos: {e}")
 
+                # --- MILESTONE TABLE ---
                 st.table([
-                    {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
-                    {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')},
-                    {"Milestone": "QC Status", "Status": log.get('qc_stat'), "Note": log.get('qc_note')}
+                    {"Milestone": "Drawing Status", "Status": log.get('draw_sub'), "Remarks": log.get('draw_sub_note')},
+                    {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Remarks": log.get('remarks')},
+                    {"Milestone": "Testing", "Status": log.get('testing'), "Remarks": log.get('test_note')}
                 ])
-
+    else:
+        st.info("No logs found in the archive for this selection.")
 with t3:
     if st.text_input("Admin PIN", type="password") == "1234":
         c1, c2 = st.columns(2)
