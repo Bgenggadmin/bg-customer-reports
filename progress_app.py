@@ -69,44 +69,86 @@ def generate_pdf(logs):
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with tab1:
-    with st.form("new_entry_form", clear_on_submit=True):
+    with st.form("main_entry_form", clear_on_submit=True):
+        # --- SECTION 1: PROJECT HEADERS (8 FIELDS) ---
+        st.subheader("📋 Project Details")
         c1, c2, c3 = st.columns(3)
         f_cust = c1.selectbox("Customer", [""] + customers)
         f_job = c2.selectbox("Job Code", [""] + jobs)
-        f_eq = c3.text_input("Equipment")
+        f_eq = c3.text_input("Equipment Name")
         
         c4, c5, c6 = st.columns(3)
-        f_po_n, f_po_d, f_eng = c4.text_input("PO No."), c5.date_input("PO Date"), c6.text_input("Engineer")
+        f_po_n = c4.text_input("PO Number")
+        f_po_d = c5.date_input("PO Date")
+        f_eng = c6.text_input("Responsible Engineer")
         
         c7, c8 = st.columns(2)
-        f_p_del, f_r_del = c7.date_input("PO Delivery Date"), c8.date_input("Revised Dispatch Date")
-        
+        f_p_del = c7.date_input("Contractual Delivery Date")
+        f_r_del = c8.date_input("Revised Dispatch Date")
+
         st.divider()
-        cam_photo = st.camera_input("📸 Capture Photo")
+
+        # --- SECTION 2: CAMERA INPUT ---
+        st.subheader("📸 Progress Capture")
+        cam_photo = st.camera_input("Take Progress Photo")
+        st.caption("Note: This will replace the old 'multi-upload' and 'drag-and-drop' with a simple camera click.")
+
+        st.divider()
+
+        # --- SECTION 3: MILESTONES (18 FIELDS) ---
+        st.subheader("📊 Milestone Tracking")
         
-        m_inputs = {}
-        for label, s_key, n_key in MILESTONE_MAP:
-            col1, col2 = st.columns([1,2])
-            opts = ["Pending", "In-Progress", "Submitted", "Approved", "Completed"]
-            m_inputs[s_key] = col1.selectbox(label, opts, key=f"s_{s_key}")
-            m_inputs[n_key] = col2.text_input(f"Remarks: {label}", key=f"n_{n_key}")
-
-        if st.form_submit_button("🚀 Save & Sync"):
-            if not f_cust or not cam_photo:
-                st.error("Select Customer and Take a Photo!")
+        # We loop through our MILESTONE_MAP to ensure every status and note is captured
+        m_responses = {}
+        for label, skey, nkey in MILESTONE_MAP:
+            col_stat, col_note = st.columns([1, 2])
+            
+            # Custom options for Drawing milestones
+            if "Drawing" in label:
+                opts = ["Pending", "In-Progress", "Submitted", "Approved"]
             else:
-                payload = {
-                    "customer": f_cust, "job_code": f_job, "equipment": f_eq,
-                    "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
-                    "po_delivery_date": str(f_p_del), "exp_dispatch_date": str(f_r_del),
-                    **m_inputs
-                }
-                res = conn.table("progress_logs").insert(payload).execute()
-                if res.data:
-                    new_id = res.data[0]['id']
-                    conn.client.storage.from_("progress-photos").upload(f"{new_id}.jpg", cam_photo.getvalue(), {"upsert":"true"})
-                    st.success(f"Saved Successfully! ID: {new_id}"); st.rerun()
+                opts = ["Pending", "In-Progress", "Hold", "Completed"]
+                
+            m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
+            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
+        # --- SUBMIT LOGIC ---
+        if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
+            if not f_cust or not f_job or not cam_photo:
+                st.error("Missing required data! Please ensure Customer, Job, and Photo are captured.")
+            else:
+                # 1. Prepare Payload
+                entry_payload = {
+                    "customer": f_cust,
+                    "job_code": f_job,
+                    "equipment": f_eq,
+                    "po_no": f_po_n,
+                    "po_date": str(f_po_d),
+                    "engineer": f_eng,
+                    "po_delivery_date": str(f_p_del),
+                    "exp_dispatch_date": str(f_r_del),
+                    **m_responses # This adds all 18 milestone fields automatically
+                }
+                
+                # 2. Insert Text Data to Supabase
+                try:
+                    res = conn.table("progress_logs").insert(entry_payload).execute()
+                    
+                    if res.data:
+                        new_id = res.data[0]['id']
+                        
+                        # 3. Upload Photo using the ID as filename (Simple {id}.jpg logic)
+                        conn.client.storage.from_("progress-photos").upload(
+                            path=f"{new_id}.jpg", 
+                            file=cam_photo.getvalue(),
+                            file_options={"upsert": "true", "content-type": "image/jpeg"}
+                        )
+                        
+                        st.success(f"✅ Success! Data & Photo synced for Entry ID: {new_id}")
+                        st.balloons()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Sync failed: {str(e)}")
 with tab2:
     data = conn.table("progress_logs").select("*").order("id", desc=True).execute().data
     if data:
