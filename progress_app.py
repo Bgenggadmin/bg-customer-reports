@@ -75,11 +75,23 @@ def create_report_pdf(logs_list):
         except: pass
     return bytes(pdf.output())
 
-# --- DATA LOAD ---
-customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
-jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
+# --- REVISED DATA LOAD (NO CACHE TO ENSURE FRESH WIPED LISTS) ---
+def get_fresh_data():
+    try:
+        c_res = conn.table("customer_master").select("name").execute()
+        j_res = conn.table("job_master").select("job_code").execute()
+        
+        # Extract names and ensure they aren't empty
+        c_final = sorted([d['name'] for d in c_res.data]) if c_res.data else []
+        j_final = sorted([d['job_code'] for d in j_res.data]) if j_res.data else []
+        
+        return c_final, j_final
+    except Exception as e:
+        st.error(f"Error connecting to database: {e}")
+        return [], []
 
-t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
+# Call this at the start of your app
+customers, jobs = get_fresh_data()
 
 # --- TAB 1: FORM (ALL 24+ FIELDS) ---
 with t1:
