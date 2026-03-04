@@ -131,16 +131,22 @@ with t1:
             
             if job_photos:
                 for photo in job_photos:
+                   if job_photos:
+                for photo in job_photos:
                     path = f"{job}_{photo.name}"
-                    conn.client.storage.from_("project-photos").upload(path=path, file=photo.getvalue())
-
-            st.success("Successfully Synchronized!")
-            st.rerun()
-
-with t2:
-    sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
-    query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All": query = query.eq("customer", sel_cust)
+                    try:
+                        # Added upsert=True to overwrite if file already exists
+                        conn.client.storage.from_("project-photos").upload(
+                            path=path,
+                            file=photo.getvalue(),
+                            file_options={
+                                "content-type": photo.type,
+                                "x-upsert": "true" 
+                            }
+                        )
+                    except Exception as e:
+                        # Log specific error to the screen for debugging
+                        st.error(f"Upload failed for {photo.name}. Check if bucket 'project-photos' exists. Error: {e}")
     data = query.execute().data
     
     if data:
