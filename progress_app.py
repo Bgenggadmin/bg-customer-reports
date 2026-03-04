@@ -40,9 +40,9 @@ def generate_pdf(logs):
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # --- LOGO LOGIC (Updated for better reliability) ---
+        # --- LOGO LOGIC ---
         try:
-            # Using download instead of public URL to ensure we get the data directly
+            # Direct download ensures the image data is available even if public URL fails
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=20)
@@ -51,7 +51,7 @@ def generate_pdf(logs):
 
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        # Shifted text to the right slightly to accommodate logo
+        # Shift text right to avoid logo
         pdf.set_xy(40, 10) 
         pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
         pdf.set_font("Arial", "I", 10)
@@ -62,6 +62,7 @@ def generate_pdf(logs):
         # 2. Job Info Header
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
+        # Explicitly set position to start below the blue header
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
