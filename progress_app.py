@@ -154,8 +154,7 @@ with t1:
                             file=photo.getvalue(),
                             file_options={"content-type": photo.type}
                         )
-                    except Exception as e:
-                        st.error(f"Upload failed: {e}")
+                    except: pass
 
             st.success("24 Fields + Photos Synchronized Successfully!")
             st.rerun()
@@ -174,21 +173,18 @@ with t2:
             current_job = log.get('job_code')
             with st.expander(f"📦 Job: {current_job} | Eq: {log.get('equipment')}"):
                 
-                # --- PHOTO GALLERY LOGIC ---
+                # --- PHOTO GALLERY LOGIC ADDED HERE ---
                 try:
-                    # List files in storage that start with the job code
                     files = conn.client.storage.from_("project-photos").list()
                     job_files = [f['name'] for f in files if f['name'].startswith(current_job)]
-                    
                     if job_files:
-                        st.markdown("#### 📷 Progress Photos")
+                        st.markdown("#### 📷 Job Photos")
                         cols = st.columns(len(job_files))
                         for idx, f_name in enumerate(job_files):
-                            img_url = conn.client.storage.from_("project-photos").get_public_url(f_name)
-                            cols[idx].image(img_url, use_container_width=True)
-                except:
-                    pass # Silently skip if storage access fails
-                
+                            url = conn.client.storage.from_("project-photos").get_public_url(f_name)
+                            cols[idx].image(url, use_container_width=True)
+                except: pass
+
                 st.table([
                     {"Milestone": "Drawing Submission", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
