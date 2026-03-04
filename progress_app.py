@@ -74,7 +74,7 @@ def create_bulk_pdf(customer_name, logs_list):
             pdf.cell(40, 7, f" {str(log.get(skey, 'N/A'))}", 1)
             pdf.cell(80, 7, f" {str(log.get(nkey, ''))}", 1, 1)
             
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output() # Fixed PDF output for FPDF2
 
 @st.cache_data(ttl=2)
 def get_masters():
@@ -90,7 +90,7 @@ t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
     st.markdown("### 📸 Job-wise Photos")
-    job_photos = st.file_uploader("Upload Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    job_photos = st.file_uploader("Upload Multiple Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
 
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -107,6 +107,7 @@ with t1:
         po_disp = col7.date_input("PO Disp. Date")
         rev_del = col8.date_input("Revised Dispatch")
 
+        # DROP DOWN OPTIONS
         draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
         draw_app_opts = ["Pending", "In-Progress", "Approved"]
         rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
@@ -128,8 +129,8 @@ with t1:
         qc_s, qc_n = custom_row("QC/Dispatch", fab_opts, "s8", "n8")
         fat_s, fat_n = custom_row("FAT", fab_opts, "s9", "n9")
 
-        if st.form_submit_button("🚀 Sync All"):
-            # INSERT RECORD
+        if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+            # 1. Database Insert
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -139,40 +140,49 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # UPLOAD PHOTOS
+            # 2. Photo Upload (Morning logic: Prefix style)
             if job_photos:
                 for photo in job_photos:
-                    path = f"{job}/{photo.name}" # Organized by folder
-                    conn.client.storage.from_("project-photos").upload(
-                        path=path, file=photo.getvalue(), file_options={"content-type": photo.type}
-                    )
-            st.success("Synced!")
+                    path = f"{job}_{photo.name}"
+                    try:
+                        conn.client.storage.from_("project-photos").upload(
+                            path=path, file=photo.getvalue(), file_options={"content-type": photo.type}
+                        )
+                    except: pass
+            
+            st.success("Synchronized Successfully!")
             st.rerun()
 
 with t2:
-    sel_cust = st.selectbox("View Customer Reports", ["Select"] + c_list)
+    sel_cust = st.selectbox("Select Customer to View", ["Select"] + c_list)
     if sel_cust != "Select":
         data = conn.table("progress_logs").select("*").eq("customer", sel_cust).order("created_at", desc=True).execute().data
         if data:
-            # FIX: Ensure PDF download works
-            pdf_bytes = create_bulk_pdf(sel_cust, data)
-            st.download_button("📥 Download PDF Report", data=pdf_bytes, file_name=f"{sel_cust}_Report.pdf", mime="application/pdf")
+            # Correct PDF Download Logic
+            pdf_out = create_bulk_pdf(sel_cust, data)
+            st.download_button("📥 Download PDF", data=pdf_out, file_name=f"{sel_cust}_Report.pdf", mime="application/pdf")
             
             for log in data:
                 j_code = log.get('job_code')
-                with st.expander(f"Job: {j_code}"):
-                    # FIX: Aggressive Photo Fetching
+                with st.expander(f"📁 Job: {j_code} | {log.get('equipment')}"):
+                    # Photo Display (Prefix style)
                     try:
-                        res = conn.client.storage.from_("project-photos").list(j_code)
-                        if res:
+                        all_files = conn.client.storage.from_("project-photos").list()
+                        job_files = [f['name'] for f in all_files if f['name'].startswith(j_code)]
+                        if job_files:
                             cols = st.columns(4)
-                            for i, file_info in enumerate(res):
-                                url = conn.client.storage.from_("project-photos").get_public_url(f"{j_code}/{file_info['name']}")
-                                cols[i % 4].image(url)
+                            for idx, f_name in enumerate(job_files):
+                                url = conn.client.storage.from_("project-photos").get_public_url(f_name)
+                                cols[idx % 4].image(url, use_container_width=True)
                     except: pass
-                    st.write(log)
+                    
+                    st.table([
+                        {"Milestone": "Drawing", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
+                        {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
+                        {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
+                    ])
 
 with t3:
-    if st.text_input("PIN", type="password") == "1234":
+    if st.text_input("Admin PIN", type="password") == "1234":
         nc = st.text_input("New Customer")
-        if st.button("Add"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
+        if st.button("Save"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
