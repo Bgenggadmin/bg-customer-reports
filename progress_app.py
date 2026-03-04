@@ -39,24 +39,24 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
 
-        # Primary Info Table (All Fields Included)
+        # Primary Info Table - Using .get() to prevent KeyError
         pdf.set_font("helvetica", "B", 9)
         # Row 1
-        pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['customer']}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['equipment']}", 1, 1)
+        pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
         # Row 2
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['job_code']}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Submitted By", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['engineer']}", 1, 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('job_code', 'N/A')}", 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Submitted By", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('engineer', 'N/A')}", 1, 1)
         # Row 3
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['po_no']}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['po_date']}", 1, 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_no', 'N/A')}", 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
         # Row 4
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Target Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['po_delivery_date']}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log['exp_dispatch_date']}", 1, 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Target Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
+        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         
         pdf.ln(5)
 
-        # Milestone Table (All 9 Stages)
+        # Milestone Table
         pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
         pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
         pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
@@ -72,8 +72,26 @@ def create_bulk_pdf(customer_name, logs_list):
         for m_name, m_val in ms:
             pdf.cell(70, 7, f" {m_name}", 1)
             pdf.cell(40, 7, f" {m_val if m_val else 'In-Progress'}", 1)
-            pdf.cell(80, 7, f" {log['remarks'] if m_name == 'Fabrication Status' else ''}", 1, 1)
+            pdf.cell(80, 7, f" {log.get('remarks', '') if m_name == 'Fabrication Status' else ''}", 1, 1)
 
+        # Photos Section (Error handling added)
+        folder = f"reports/{log.get('id')}"
+        try:
+            files = conn.client.storage.from_("progress-photos").list(folder)
+            if files:
+                pdf.ln(5); pdf.set_font("helvetica", "B", 9); pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
+                y_p = pdf.get_y()
+                for i, f in enumerate(files[:2]):
+                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
+                    resp = requests.get(url, timeout=5)
+                    if resp.status_code == 200:
+                        img = BytesIO(resp.content)
+                        x = 10 if i == 0 else 105
+                        pdf.image(img, x=x, y=y_p, w=90, h=60)
+        except Exception:
+            pass
+            
+    return bytes(pdf.output())
         # Photos
         folder = f"reports/{log['id']}"
         try:
