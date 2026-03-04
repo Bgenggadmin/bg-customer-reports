@@ -17,9 +17,9 @@ class ProgressPDF(FPDF):
             except: pass
         self.set_font("helvetica", "B", 15)
         self.set_text_color(0, 51, 102) 
-        self.cell(0, 10, "B&G ENGINEERING", 0, 1, "R") # [cite: 1]
+        self.cell(0, 10, "B&G ENGINEERING", 0, 1, "R")
         self.set_font("helvetica", "B", 8)
-        self.cell(0, 5, "EVAPORATION | MIXING | DRYING", 0, 1, "R") # [cite: 1]
+        self.cell(0, 5, "EVAPORATION | MIXING | DRYING", 0, 1, "R")
         self.ln(10)
         self.set_draw_color(0, 51, 102)
         self.line(10, 30, 200, 30)
@@ -28,7 +28,7 @@ class ProgressPDF(FPDF):
         self.set_y(-15)
         self.set_font("helvetica", "I", 8)
         self.set_text_color(100)
-        self.cell(0, 10, f"Page {self.page_no()} | B&G Engineering Industries", 0, 0, "C") # [cite: 5]
+        self.cell(0, 10, f"Page {self.page_no()} | B&G Engineering Industries", 0, 0, "C")
 
 def create_bulk_pdf(customer_name, logs_list):
     pdf = ProgressPDF()
@@ -36,10 +36,10 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.add_page()
         pdf.set_font("helvetica", "B", 10)
         pdf.set_fill_color(240, 240, 240)
-        pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True) # [cite: 4]
+        pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
 
-        # Primary Info Table [cite: 2]
+        # Primary Info Table
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
@@ -52,7 +52,7 @@ def create_bulk_pdf(customer_name, logs_list):
         
         pdf.ln(5)
 
-        # Milestone Table with Safety .get() and Notes [cite: 3]
+        # Milestone Table with Individual Remarks
         pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
         pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
         pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
@@ -74,8 +74,21 @@ def create_bulk_pdf(customer_name, logs_list):
             pdf.cell(70, 7, f" {m_name}", 1)
             pdf.cell(40, 7, f" {m_val if m_val else 'In-Progress'}", 1)
             pdf.cell(80, 7, f" {m_note if m_note else ''}", 1, 1)
-        
-        # ... (Photos logic remains same)
+
+        # Photos logic
+        folder_path = f"reports/{log.get('id')}"
+        try:
+            files = conn.client.storage.from_("progress-photos").list(folder_path)
+            if files:
+                pdf.ln(5); pdf.set_font("helvetica", "B", 9); pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
+                y_start = pdf.get_y()
+                for i, f in enumerate(files[:2]):
+                    img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}")
+                    resp = requests.get(img_url, timeout=5)
+                    if resp.status_code == 200:
+                        img_bytes = BytesIO(resp.content)
+                        pdf.image(img_bytes, x=10 if i == 0 else 105, y=y_start, w=90, h=60)
+        except: pass
     return bytes(pdf.output())
 
 # --- DATA HELPERS ---
@@ -111,7 +124,7 @@ with t1:
 
         st.markdown("### 📊 Specific Milestone Updates")
         
-        # --- DIFFERENT DROPDOWNS FOR DIFFERENT MILESTONES ---
+        # DIFFERENT DROPDOWNS FOR DIFFERENT MILESTONES
         draw_opts = ["In-Progress", "Submitted", "Revised", "Approved", "N/A"]
         rm_opts = ["In-Progress", "Ordered", "Partially Received", "Received", "N/A"]
         fab_opts = ["In-Progress", "Shell Welding", "Jacket Welding", "Structure", "Completed"]
@@ -131,20 +144,45 @@ with t1:
 
         m4, n4 = st.columns([1, 2])
         fab_s = m4.selectbox("Fabrication Status", fab_opts)
-        rem = n4.text_input("Fabrication Remarks")
+        rem = n4.text_input("Fabrication Remarks (Main)")
 
-        m_row = st.columns(3)
-        sub_s = m_row[0].selectbox("Sub-deliveries", rm_opts)
-        test_s = m_row[1].selectbox("Testing", test_opts)
-        fat_s = m_row[2].selectbox("FAT Status", ["In-Progress", "Scheduled", "Completed"])
+        files = st.file_uploader("Upload Photos", accept_multiple_files=True)
 
         if st.form_submit_button("🚀 Sync to Cloud"):
-            # ... (Insert logic remains same)
+            res = conn.table("progress_logs").insert({
+                "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
+                "engineer": eng, "po_delivery_date": str(po_del), "exp_dispatch_date": str(rev_del),
+                "draw_sub": d_sub, "draw_sub_note": d_sub_n,
+                "draw_app": d_app, "draw_app_note": d_app_n,
+                "rm_status": rm_s, "rm_note": rm_n,
+                "fab_status": fab_s, "remarks": rem
+            }).execute()
+            if files and res.data:
+                log_id = res.data[0]['id']
+                for i, f in enumerate(files):
+                    conn.client.storage.from_("progress-photos").upload(f"reports/{log_id}/img_{i}.jpg", f.getvalue())
             st.success("Cloud Sync Complete!"); st.rerun()
 
 with t2:
-    # ... (Archive logic remains same)
-    pass
+    sel_cust = st.selectbox("Select Customer", ["All"] + c_list)
+    query = conn.table("progress_logs").select("*").order("created_at", desc=True)
+    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    data = query.execute().data
+    
+    if sel_cust != "All" and data:
+        pdf_bytes = create_bulk_pdf(sel_cust, data)
+        st.download_button(f"📥 Download {sel_cust} Official PDF", pdf_bytes, f"BG_{sel_cust}.pdf", "application/pdf")
+    
+    if not data:
+        st.info("No logs found for the selected customer.")
+    else:
+        for log in data:
+            with st.expander(f"📦 {log.get('job_code')} - {log.get('equipment')}"):
+                st.table({
+                    "Milestone": ["Drawing Sub", "Drawing App", "RM Status", "Fabrication"],
+                    "Status": [log.get('draw_sub'), log.get('draw_app'), log.get('rm_status'), log.get('fab_status')],
+                    "Remarks": [log.get('draw_sub_note'), log.get('draw_app_note'), log.get('rm_note'), log.get('remarks')]
+                })
 
 with t3:
     if st.text_input("PIN", type="password") == "1234":
@@ -156,7 +194,7 @@ with t3:
                 conn.table("customer_master").insert({"name": c_name}).execute()
                 st.rerun()
         with col_m2:
-            st.subheader("Add Job Code") # FIXED: Added back Job Code entry field
+            st.subheader("Add Job Code")
             j_code = st.text_input("Job Code (e.g. BG-500)")
             if st.button("Add Job Code"): 
                 conn.table("job_master").insert({"job_code": j_code}).execute()
