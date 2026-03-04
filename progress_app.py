@@ -11,97 +11,94 @@ from PIL import Image
 st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- PDF GENERATOR (8 Header Fields + 9 Milestones + Passport Photos) ---
+# --- PDF GENERATOR (FULL DATA TABLE + SMALL PHOTOS) ---
 class ProgressPDF(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
-            try: self.image("logo.png", 10, 8, 33)
+            try: self.image("logo.png", 10, 8, 30)
             except: pass
-        self.set_font("helvetica", "B", 15)
+        self.set_font("helvetica", "B", 14)
         self.set_text_color(0, 51, 102) 
-        self.cell(0, 10, "B&G ENGINEERING", 0, 1, "R")
-        self.ln(10)
-        self.set_draw_color(0, 51, 102)
-        self.line(10, 30, 200, 30)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font("helvetica", "I", 8)
-        self.cell(0, 10, f"Page {self.page_no()} | B&G Engineering Industries", 0, 0, "C")
+        self.cell(0, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "R")
+        self.ln(5)
+        self.line(10, 25, 200, 25)
 
 def create_filtered_pdf(logs_list):
     pdf = ProgressPDF()
     for log in logs_list:
         pdf.add_page()
         pdf.set_font("helvetica", "B", 10)
-        pdf.set_fill_color(240, 240, 240)
-        pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
-        pdf.ln(4)
+        pdf.set_fill_color(235, 235, 235)
+        pdf.cell(0, 8, f" JOB REPORT: {log.get('job_code')}", 1, 1, "C", fill=True)
+        pdf.ln(3)
         
         # --- ALL 8 HEADER FIELDS ---
-        pdf.set_font("helvetica", "B", 9)
-        pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment')}", 1, 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('job_code')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Engineer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('engineer')}", 1, 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_no')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date')}", 1, 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Disp. Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date')}", 1)
-        pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Disp.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date')}", 1, 1)
-        pdf.ln(5)
-
-        # --- ALL 9 MILESTONES ---
-        ms_list = [
-            ("Drawing Submission", 'draw_sub', 'draw_sub_note'), ("Drawing Approval", 'draw_app', 'draw_app_note'),
-            ("RM Status", 'rm_status', 'rm_note'), ("Sub-deliveries", 'sub_del', 'sub_del_note'),
-            ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing Status", 'buff_stat', 'buff_note'),
-            ("Testing Status", 'testing', 'test_note'), ("QC Status", 'qc_stat', 'qc_note'), ("FAT Status", 'fat_stat', 'fat_note')
+        pdf.set_font("helvetica", "B", 8)
+        header_data = [
+            ("Customer", log.get('customer')), ("Equipment", log.get('equipment')),
+            ("Job Code", log.get('job_code')), ("Engineer", log.get('engineer')),
+            ("PO No.", log.get('po_no')), ("PO Date", log.get('po_date')),
+            ("PO Delivery", log.get('po_delivery_date')), ("Rev. Dispatch", log.get('exp_dispatch_date'))
         ]
-        pdf.set_font("helvetica", "B", 9)
-        pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
-        pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
-        pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
+        for i in range(0, len(header_data), 2):
+            pdf.cell(30, 7, f" {header_data[i][0]}", 1, 0, 'L', True)
+            pdf.cell(65, 7, f" {header_data[i][1]}", 1, 0)
+            pdf.cell(30, 7, f" {header_data[i+1][0]}", 1, 0, 'L', True)
+            pdf.cell(65, 7, f" {header_data[i+1][1]}", 1, 1)
+        
+        pdf.ln(2)
+
+        # --- ALL 9 MILESTONES (18 FIELDS TOTAL) ---
+        pdf.set_font("helvetica", "B", 8)
+        pdf.cell(60, 7, " Milestone Item", 1, 0, 'C', True)
+        pdf.cell(35, 7, " Status", 1, 0, 'C', True)
+        pdf.cell(95, 7, " Detailed Remarks", 1, 1, 'C', True)
         
         pdf.set_font("helvetica", "", 8)
-        for label, skey, nkey in ms_list:
-            pdf.cell(70, 7, f" {label}", 1)
-            pdf.cell(40, 7, f" {log.get(skey, 'N/A')}", 1)
-            pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
+        milestones = [
+            ("Drawing Submission", 'draw_sub', 'draw_sub_note'), 
+            ("Drawing Approval", 'draw_app', 'draw_app_note'),
+            ("RM Status", 'rm_status', 'rm_note'), 
+            ("Sub-deliveries", 'sub_del', 'sub_del_note'),
+            ("Fabrication Status", 'fab_status', 'remarks'), 
+            ("Buffing Status", 'buff_stat', 'buff_note'),
+            ("Testing Status", 'testing', 'test_note'), 
+            ("QC Status", 'qc_stat', 'qc_note'), 
+            ("FAT Status", 'fat_stat', 'fat_note')
+        ]
+        for label, skey, nkey in milestones:
+            pdf.cell(60, 6, f" {label}", 1)
+            pdf.cell(35, 6, f" {log.get(skey, '-')}", 1, 0, 'C')
+            pdf.cell(95, 6, f" {log.get(nkey, '-')}", 1, 1)
 
-        # --- PASSPORT PHOTOS ---
+        # --- ALL PHOTOS (SMALL PASSPORT SIZE BELOW TABLE) ---
         current_job = log.get('job_code')
         try:
             res = conn.client.storage.from_("progress-photos").list()
             job_files = [f['name'] for f in res if f['name'].startswith(f"{current_job}_")]
             if job_files:
-                pdf.ln(5)
-                x_start, y_start = 10, pdf.get_y() + 2
-                for idx, f_name in enumerate(job_files[:4]):
+                pdf.ln(4)
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 7, "SITE PHOTOS", 0, 1, "L")
+                x, y = 10, pdf.get_y()
+                for idx, f_name in enumerate(job_files[:8]): # Show up to 8 photos
                     url = conn.client.storage.from_("progress-photos").get_public_url(f_name)
                     img_data = requests.get(url).content
-                    img = Image.open(BytesIO(img_data))
-                    if img.mode != 'RGB': img = img.convert('RGB')
-                    img.thumbnail((350, 450)) 
-                    img_bytes = BytesIO()
-                    img.save(img_bytes, format='JPEG', quality=70) # 50KB optimization
-                    row, col = idx // 2, idx % 2
-                    pdf.image(img_bytes, x_start + (col * 40), y_start + (row * 50), 35, 45) # Passport size
+                    img = Image.open(BytesIO(img_data)).convert('RGB')
+                    img.thumbnail((300, 400))
+                    buf = BytesIO()
+                    img.save(buf, format='JPEG', quality=50) # Further reduced for 50KB target
+                    
+                    row, col = idx // 4, idx % 4
+                    pdf.image(buf, x + (col * 45), y + (row * 45), 35, 40)
         except: pass
     return bytes(pdf.output())
 
-# --- DATA HELPERS ---
-@st.cache_data(ttl=5)
-def get_masters():
-    try:
-        c = [d['name'] for d in conn.table("customer_master").select("name").execute().data]
-        j = [d['job_code'] for d in conn.table("job_master").select("job_code").execute().data]
-        return sorted(c), sorted(j)
-    except: return [], []
+# --- FETCH MASTERS ---
+c_list, j_list = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data]), sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-c_list, j_list = get_masters()
-t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
+t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive & Delete", "🛠️ Masters"])
 
-# --- TAB 1: FULL 24-FIELD FORM ---
 with t1:
     with st.form("main_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -112,79 +109,73 @@ with t1:
         po_disp, rev_disp = c7.date_input("PO Dispatch Date"), c8.date_input("Revised Dispatch Date")
 
         st.markdown("---")
-        def custom_row(label, opts, skey, nkey):
-            co1, co2 = st.columns([1, 2])
-            s = co1.selectbox(label, opts, key=skey)
-            n = co2.text_input(f"Remarks for {label}", key=nkey)
+        # DROPDOWNS AS SPECIFIED
+        opts_std = ["Pending", "In-Progress", "Hold", "Completed"]
+        
+        s1, n1 = st.columns([1,2])[0].selectbox("Drawing Submission", ["In-Progress", "Submitted"]), st.columns([1,2])[1].text_input("Remarks: Drawing Sub", key="n1")
+        s2, n2 = st.columns([1,2])[0].selectbox("Drawing Approval", ["Pending", "Approved"]), st.columns([1,2])[1].text_input("Remarks: Drawing App", key="n2")
+        
+        def row_ui(label, key_s, key_n):
+            col_a, col_b = st.columns([1, 2])
+            s = col_a.selectbox(label, opts_std, key=key_s)
+            n = col_b.text_input(f"Remarks: {label}", key=key_n)
             return s, n
 
-        opts = ["Pending", "In-Progress", "Hold", "Completed"]
-        d_s, d_n = custom_row("Drawing Submission", ["In-Progress", "Submitted"], "s1", "n1")
-        da_s, da_n = custom_row("Drawing Approval", ["Pending", "Approved"], "s2", "n2")
-        rm_s, rm_n = custom_row("RM Status", opts, "s3", "n3")
-        sd_s, sd_n = custom_row("Sub-deliveries", opts, "s4", "n4")
-        fb_s, fb_n = custom_row("Fabrication Status", opts, "s5", "n5")
-        bf_s, bf_n = custom_row("Buffing Status", opts, "s6", "n6")
-        ts_s, ts_n = custom_row("Testing Status", opts, "s7", "n7")
-        qc_s, qc_n = custom_row("QC Status", opts, "s8", "n8")
-        fat_s, fat_n = custom_row("FAT Status", opts, "s9", "n9")
+        s3, n3 = row_ui("RM Status", "s3", "n3")
+        s4, n4 = row_ui("Sub-deliveries", "s4", "n4")
+        s5, n5 = row_ui("Fabrication Status", "s5", "n5")
+        s6, n6 = row_ui("Buffing Status", "s6", "n6")
+        s7, n7 = row_ui("Testing Status", "s7", "n7")
+        s8, n8 = row_ui("QC Status", "s8", "n8")
+        s9, n9 = row_ui("FAT Status", "s9", "n9")
 
         st.markdown("---")
-        job_photos = st.file_uploader("Upload Photos (Strict Job-Wise Sync)", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+        photos = st.file_uploader("Upload Photos (Multiple Allowed)", accept_multiple_files=True)
 
-        if st.form_submit_button("🚀 Sync All Fields & Photos"):
+        if st.form_submit_button("🚀 Sync All 24+ Fields"):
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d), "engineer": eng,
                 "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_disp),
-                "draw_sub": d_s, "draw_sub_note": d_n, "draw_app": da_s, "draw_app_note": da_n,
-                "rm_status": rm_s, "rm_note": rm_n, "sub_del": sd_s, "sub_del_note": sd_n,
-                "fab_status": fb_s, "remarks": fb_n, "buff_stat": bf_s, "buff_note": bf_n,
-                "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
+                "draw_sub": s1, "draw_sub_note": n1, "draw_app": s2, "draw_app_note": n2,
+                "rm_status": s3, "rm_note": n3, "sub_del": s4, "sub_del_note": n4,
+                "fab_status": s5, "remarks": n5, "buff_stat": s6, "buff_note": n6,
+                "testing": s7, "test_note": n7, "qc_stat": s8, "qc_note": n8, "fat_stat": s9, "fat_note": n9
             }).execute()
-            if job_photos:
-                for photo in job_photos:
-                    path = f"{job}_{photo.name.replace(' ', '_')}"
-                    conn.client.storage.from_("progress-photos").upload(path=path, file=photo.getvalue(), file_options={"upsert": "true"})
-            st.success("Synchronized!"); st.rerun()
+            
+            if photos:
+                for p in photos:
+                    # Unique timestamping to prevent "latest photo only" issue
+                    filename = f"{job}_{datetime.now().strftime('%H%M%S')}_{p.name}"
+                    conn.client.storage.from_("progress-photos").upload(path=filename, file=p.getvalue())
+            st.success("Synchronized Successfully!"); st.rerun()
 
-# --- TAB 2: FILTERED ARCHIVE & DELETE ---
 with t2:
-    sel_cust = st.selectbox("Select Customer to View/Download", ["All"] + c_list)
+    sel_cust = st.selectbox("Filter by Customer", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All":
-        query = query.eq("customer", sel_cust)
-    
+    if sel_cust != "All": query = query.eq("customer", sel_cust)
     data = query.execute().data
     
     if data:
-        # PDF DOWNLOAD OPTION (CUSTOMER-WISE)
         if sel_cust != "All":
-            st.download_button(f"📥 Download Report for {sel_cust}", create_filtered_pdf(data), f"BG_{sel_cust}.pdf")
+            st.download_button(f"📥 Download PDF for {sel_cust}", create_filtered_pdf(data), f"{sel_cust}_Report.pdf")
         
-        st.markdown("---")
         for log in data:
-            # Layout for Job Summary and Delete Button
-            col_info, col_del = st.columns([5, 1])
-            with col_info:
-                st.markdown(f"**Job: {log.get('job_code')}** | {log.get('customer')} | {log.get('equipment')}")
-            with col_del:
-                if st.button("🗑️ Delete", key=f"del_{log.get('id')}"):
-                    conn.table("progress_logs").delete().eq("id", log.get('id')).execute()
-                    st.warning(f"Deleted Job {log.get('job_code')}"); st.rerun()
+            c_info, c_del = st.columns([5, 1])
+            c_info.write(f"**Job: {log.get('job_code')}** | {log.get('customer')} | {log.get('equipment')}")
+            if c_del.button("🗑️ Delete", key=f"del_{log.get('id')}"):
+                conn.table("progress_logs").delete().eq("id", log.get('id')).execute()
+                st.rerun()
             
-            # Details Expander
-            with st.expander("Show Detailed Photos & Data"):
-                # Photos
+            with st.expander("View Full Fields & Photos"):
+                # Photo Display
                 cur_job = log.get('job_code')
-                try:
-                    res = conn.client.storage.from_("progress-photos").list()
-                    job_files = [f['name'] for f in res if f['name'].startswith(f"{cur_job}_")]
-                    if job_files:
-                        pcols = st.columns(4)
-                        for i, f in enumerate(job_files):
-                            url = conn.client.storage.from_("progress-photos").get_public_url(f)
-                            pcols[i % 4].image(url, use_container_width=True)
-                except: pass
+                res = conn.client.storage.from_("progress-photos").list()
+                job_files = [f['name'] for f in res if f['name'].startswith(f"{cur_job}_")]
+                if job_files:
+                    cols = st.columns(6)
+                    for i, f in enumerate(job_files):
+                        url = conn.client.storage.from_("progress-photos").get_public_url(f)
+                        cols[i % 6].image(url, use_container_width=True)
                 
-                # Table for data verification
-                st.write(f"PO: {log.get('po_no')} | Eng: {log.get('engineer')} | Fab Status: {log.get('fab_status')}")
+                # Full Field Table (Verification)
+                st.table({k: [v] for k, v in log.items() if v})
