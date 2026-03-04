@@ -3,3 +3,5 @@ st-supabase-connection
 fpdf2
 Pillow
 pandas
+fpdf2
+requests
