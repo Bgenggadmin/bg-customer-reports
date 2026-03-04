@@ -46,24 +46,33 @@ def create_pdf(log_data, photo_urls):
     pdf.multi_cell(0, 6, log_data['remarks'])
     pdf.ln(10)
 
-    # Photos (2 per row)
+    # Photos Logic
     if photo_urls:
         pdf.set_font("helvetica", "B", 10)
         pdf.cell(0, 10, "Shop Floor Media:", ln=True)
         
         for i, url in enumerate(photo_urls):
             try:
-                resp = requests.get(url)
-                img = BytesIO(resp.content)
-                # Logic for 2-column layout
-                x = 10 if i % 2 == 0 else 110
-                if i > 0 and i % 2 == 0: pdf.ln(75) # New row
-                pdf.image(img, x=x, w=90)
-            except:
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200:
+                    img = BytesIO(resp.content)
+                    # 2-column layout logic
+                    x = 10 if i % 2 == 0 else 110
+                    if i > 0 and i % 2 == 0: 
+                        pdf.ln(75) 
+                        # Check if we need a new page
+                        if pdf.get_y() > 220:
+                            pdf.add_page()
+                    pdf.image(img, x=x, w=90)
+            except Exception as e:
+                print(f"Skipping image due to error: {e}")
                 continue
-    return pdf.output()
+    
+    # IMPORTANT: Convert output to bytes for Streamlit
+    return bytes(pdf.output())
 
 # --- DATA FETCHING ---
+@st.cache_data(ttl=60)
 def get_masters():
     try:
         c_data = conn.table("customer_master").select("name").execute().data
@@ -85,7 +94,7 @@ with tab_entry:
         c1, c2, c3 = st.columns(3)
         cust = c1.selectbox("Customer", customer_list if customer_list else ["Add in Masters"])
         eng = c2.text_input("Engineer Name")
-        eq = c3.text_input("Equipment (e.g. 5KL Tank)")
+        eq = c3.text_input("Equipment")
 
         f1, f2, f3 = st.columns(3)
         job = f1.selectbox("Job Code", job_list if job_list else ["Add in Masters"])
@@ -99,99 +108,90 @@ with tab_entry:
         
         if st.form_submit_button("🚀 Save & Upload"):
             if not eng or not eq:
-                st.error("Please fill Engineer and Equipment details.")
+                st.error("Missing Details.")
             else:
-                res = conn.table("progress_logs").insert({
-                    "customer": cust, "engineer": eng, "equipment": eq,
-                    "job_code": job, "po_no": po, "target_date": str(target),
-                    "fab_status": status, "remarks": remarks
-                }).execute()
-                log_id = res.data[0]['id']
+                try:
+                    res = conn.table("progress_logs").insert({
+                        "customer": cust, "engineer": eng, "equipment": eq,
+                        "job_code": job, "po_no": po, "target_date": str(target),
+                        "fab_status": status, "remarks": remarks
+                    }).execute()
+                    log_id = res.data[0]['id']
 
-                # Unified Upload Logic
-                all_media = ([cam_pic] if cam_pic else []) + (gal_pics if gal_pics else [])
-                for i, pic in enumerate(all_media):
-                    ts = datetime.now().strftime("%H%M%S")
-                    fname = getattr(pic, 'name', f"cam_{ts}_{i}.jpg")
-                    path = f"reports/{log_id}/{fname}"
-                    conn.client.storage.from_("progress-photos").upload(
-                        path=path, file=pic.getvalue(), file_options={"upsert": "true"}
-                    )
-                st.success("Cloud Sync Complete!")
-                st.balloons()
-                st.rerun()
+                    all_media = ([cam_pic] if cam_pic else []) + (gal_pics if gal_pics else [])
+                    for i, pic in enumerate(all_media):
+                        ts = datetime.now().strftime("%H%M%S")
+                        fname = getattr(pic, 'name', f"cam_{ts}_{i}.jpg")
+                        path = f"reports/{log_id}/{fname}"
+                        conn.client.storage.from_("progress-photos").upload(
+                            path=path, file=pic.getvalue(), file_options={"upsert": "true"}
+                        )
+                    st.success("Cloud Sync Complete!")
+                    st.balloons()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
-# --- TAB 2: ARCHIVE & PDF (STABILIZED) ---
+# --- TAB 2: ARCHIVE & PDF ---
 with tab_archive:
-    st.subheader("📊 Customer-wise Weekly Reviews")
+    st.subheader("📊 Customer Reviews")
     col_f1, col_f2 = st.columns(2)
-    sel_cust = col_f1.selectbox("Filter by Customer", ["All"] + customer_list, key="filter_cust")
-    show_weekly = col_f2.checkbox("Show only last 7 days", value=True, key="filter_week")
+    sel_cust = col_f1.selectbox("Customer", ["All"] + customer_list)
+    show_weekly = col_f2.checkbox("Last 7 days only", value=True)
 
-    # 1. Fetch Data based on Filters
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All": 
-        query = query.eq("customer", sel_cust)
-    if show_weekly: 
-        query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
+    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    if show_weekly: query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
     
     data = query.execute().data
-
     if data:
         for log in data:
-            # UNIQUE KEY for each expander/button is critical in Streamlit
-            log_id = log['id']
-            with st.expander(f"📦 {log['equipment']} ({log['job_code']}) - {log['created_at'][:10]}"):
+            with st.expander(f"📦 {log['equipment']} | {log['customer']} ({log['created_at'][:10]})"):
+                t_col, p_col = st.columns([1,1])
                 
-                # Setup Columns: Info on Left, Photos on Right
-                t_col, p_col = st.columns([1, 1])
-                
-                # Fetch Photos from Storage
-                folder = f"reports/{log_id}"
+                folder = f"reports/{log['id']}"
                 files = conn.client.storage.from_("progress-photos").list(folder)
                 photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
 
                 with t_col:
-                    st.markdown(f"**Customer:** {log['customer']}")
-                    st.markdown(f"**Status:** :blue[{log['fab_status']}]")
-                    st.markdown(f"**Remarks:** {log['remarks']}")
+                    st.write(f"**Status:** {log['fab_status']}")
+                    st.info(f"Remarks: {log['remarks']}")
                     
-                    # --- PDF DOWNLOAD LOGIC ---
                     if photo_urls:
-                        # Pre-generate the PDF so the button is ready
-                        pdf_data = create_pdf(log, photo_urls)
-                        st.download_button(
-                            label="📥 Download PDF Report",
-                            data=pdf_data,
-                            file_name=f"B&G_Report_{log['job_code']}_{log['created_at'][:10]}.pdf",
-                            mime="application/pdf",
-                            key=f"dl_{log_id}" # Unique key prevents the 'disappearing button' bug
-                        )
+                        # Pre-generate PDF bytes
+                        try:
+                            pdf_bytes = create_pdf(log, photo_urls)
+                            st.download_button(
+                                label="📥 Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"Report_{log['job_code']}.pdf",
+                                mime="application/pdf",
+                                key=f"btn_{log['id']}" # UNIQUE KEY
+                            )
+                        except Exception as e:
+                            st.error("PDF Error")
                     else:
-                        st.warning("No photos found. PDF requires at least one image.")
+                        st.warning("No photos for PDF")
 
                 with p_col:
                     if photo_urls:
-                        # Show photos in a tight grid
-                        st.image(photo_urls, use_container_width=True, caption=[f"Shop Photo {i+1}" for i in range(len(photo_urls))])
-                    else:
-                        st.info("No media attached.")
+                        st.image(photo_urls, use_container_width=True)
     else:
-        st.info("No logs found for this selection. Try changing the filters.")
+        st.info("No logs found.")
 
 # --- TAB 3: ADMIN ---
 with tab_masters:
     if st.text_input("Admin PIN", type="password") == "1234":
         m1, m2 = st.columns(2)
         with m1:
-            with st.form("add_c"):
+            with st.form("add_c", clear_on_submit=True):
                 n = st.text_input("New Customer")
-                if st.form_submit_button("Add") and n:
+                if st.form_submit_button("Add"):
                     conn.table("customer_master").insert({"name": n}).execute()
                     st.rerun()
         with m2:
-            with st.form("add_j"):
+            with st.form("add_j", clear_on_submit=True):
                 n = st.text_input("New Job Code")
-                if st.form_submit_button("Add") and n:
+                if st.form_submit_button("Add"):
                     conn.table("job_master").insert({"job_code": n}).execute()
                     st.rerun()
