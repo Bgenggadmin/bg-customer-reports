@@ -49,16 +49,14 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Target Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
-        
         pdf.ln(5)
 
-        # Milestone Table with Individual Remarks
+        # Milestone Table logic
         pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
         pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
         pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
         pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
 
-        pdf.set_font("helvetica", "", 8)
         ms = [
             ("Drawing Submission", log.get('draw_sub'), log.get('draw_sub_note')),
             ("Drawing Approval", log.get('draw_app'), log.get('draw_app_note')),
@@ -70,29 +68,15 @@ def create_bulk_pdf(customer_name, logs_list):
             ("QC/Dispatch Status", log.get('qc_stat'), log.get('qc_note')),
             ("FAT", log.get('fat_stat'), log.get('fat_note'))
         ]
+        pdf.set_font("helvetica", "", 8)
         for m_name, m_val, m_note in ms:
             pdf.cell(70, 7, f" {m_name}", 1)
             pdf.cell(40, 7, f" {m_val if m_val else 'In-Progress'}", 1)
             pdf.cell(80, 7, f" {m_note if m_note else ''}", 1, 1)
-
-        # Photos logic
-        folder_path = f"reports/{log.get('id')}"
-        try:
-            files = conn.client.storage.from_("progress-photos").list(folder_path)
-            if files:
-                pdf.ln(5); pdf.set_font("helvetica", "B", 9); pdf.cell(0, 6, "SHOP FLOOR MEDIA:", ln=True)
-                y_start = pdf.get_y()
-                for i, f in enumerate(files[:2]):
-                    img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}")
-                    resp = requests.get(img_url, timeout=5)
-                    if resp.status_code == 200:
-                        img_bytes = BytesIO(resp.content)
-                        pdf.image(img_bytes, x=10 if i == 0 else 105, y=y_start, w=90, h=60)
-        except: pass
     return bytes(pdf.output())
 
 # --- DATA HELPERS ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=10)
 def get_masters():
     try:
         c = [d['name'] for d in conn.table("customer_master").select("name").execute().data]
@@ -103,7 +87,6 @@ def get_masters():
 c_list, j_list = get_masters()
 
 # --- APP LAYOUT ---
-st.title("🏗️ B&G Progress Hub")
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
@@ -119,83 +102,61 @@ with t1:
         eng = col6.text_input("Engineer In-Charge")
 
         col7, col8 = st.columns(2)
-        po_del = col7.date_input("Target Dispatch Date")
-        rev_del = col8.date_input("Revised Dispatch Date")
+        po_del = col7.date_input("Target Dispatch")
+        rev_del = col8.date_input("Revised Dispatch")
 
-        st.markdown("### 📊 Specific Milestone Updates")
+        st.markdown("### 📊 Milestone Status & Notes")
+        draw_opts = ["In-Progress", "Submitted", "Approved", "N/A"]
+        rm_opts = ["In-Progress", "Ordered", "Received", "N/A"]
         
-        # DIFFERENT DROPDOWNS FOR DIFFERENT MILESTONES
-        draw_opts = ["In-Progress", "Submitted", "Revised", "Approved", "N/A"]
-        rm_opts = ["In-Progress", "Ordered", "Partially Received", "Received", "N/A"]
-        fab_opts = ["In-Progress", "Shell Welding", "Jacket Welding", "Structure", "Completed"]
-        test_opts = ["In-Progress", "Hydro-Test", "Pneumatic-Test", "Completed"]
-        
-        m1, n1 = st.columns([1, 2])
-        d_sub = m1.selectbox("Drawing Submission", draw_opts)
-        d_sub_n = n1.text_input("Drawing Sub Note")
+        def m_row(label, key1, key2, opts):
+            c1, c2 = st.columns([1, 2])
+            val = c1.selectbox(label, opts, key=key1)
+            note = c2.text_input(f"Note for {label}", key=key2)
+            return val, note
 
-        m2, n2 = st.columns([1, 2])
-        d_app = m2.selectbox("Drawing Approval", ["In-Progress", "Approved", "Conditionally Approved"])
-        d_app_n = n2.text_input("Drawing App Note")
-
-        m3, n3 = st.columns([1, 2])
-        rm_s = m3.selectbox("RM Status", rm_opts)
-        rm_n = n3.text_input("RM Status Note")
-
-        m4, n4 = st.columns([1, 2])
-        fab_s = m4.selectbox("Fabrication Status", fab_opts)
-        rem = n4.text_input("Fabrication Remarks (Main)")
-
-        files = st.file_uploader("Upload Photos", accept_multiple_files=True)
+        d_s, d_n = m_row("Drawing Submission", "ds1", "dn1", draw_opts)
+        r_s, r_n = m_row("RM Status", "rs1", "rn1", rm_opts)
+        f_s = st.selectbox("Fabrication", ["In-Progress", "Completed"], key="fs1")
+        rem = st.text_area("Fabrication Remarks")
 
         if st.form_submit_button("🚀 Sync to Cloud"):
             res = conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_del), "exp_dispatch_date": str(rev_del),
-                "draw_sub": d_sub, "draw_sub_note": d_sub_n,
-                "draw_app": d_app, "draw_app_note": d_app_n,
-                "rm_status": rm_s, "rm_note": rm_n,
-                "fab_status": fab_s, "remarks": rem
+                "draw_sub": d_s, "draw_sub_note": d_n, "rm_status": r_s, "rm_note": r_n,
+                "fab_status": f_s, "remarks": rem
             }).execute()
-            if files and res.data:
-                log_id = res.data[0]['id']
-                for i, f in enumerate(files):
-                    conn.client.storage.from_("progress-photos").upload(f"reports/{log_id}/img_{i}.jpg", f.getvalue())
-            st.success("Cloud Sync Complete!"); st.rerun()
+            st.success("Sync Complete!"); st.rerun()
 
 with t2:
-    sel_cust = st.selectbox("Select Customer", ["All"] + c_list)
+    sel_cust = st.selectbox("Filter by Customer", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
     if sel_cust != "All": query = query.eq("customer", sel_cust)
     data = query.execute().data
     
-    if sel_cust != "All" and data:
-        pdf_bytes = create_bulk_pdf(sel_cust, data)
-        st.download_button(f"📥 Download {sel_cust} Official PDF", pdf_bytes, f"BG_{sel_cust}.pdf", "application/pdf")
-    
-    if not data:
-        st.info("No logs found for the selected customer.")
-    else:
+    if data:
+        if sel_cust != "All":
+            pdf_bytes = create_bulk_pdf(sel_cust, data)
+            st.download_button("📥 Download Report", pdf_bytes, f"{sel_cust}_Report.pdf")
+        
         for log in data:
             with st.expander(f"📦 {log.get('job_code')} - {log.get('equipment')}"):
-                st.table({
-                    "Milestone": ["Drawing Sub", "Drawing App", "RM Status", "Fabrication"],
-                    "Status": [log.get('draw_sub'), log.get('draw_app'), log.get('rm_status'), log.get('fab_status')],
-                    "Remarks": [log.get('draw_sub_note'), log.get('draw_app_note'), log.get('rm_note'), log.get('remarks')]
-                })
+                # This creates the table view you requested
+                st.table([
+                    {"Milestone": "Drawing", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
+                    {"Milestone": "RM Status", "Status": log.get('rm_status'), "Note": log.get('rm_note')},
+                    {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')}
+                ])
+    else:
+        st.warning("No records found in database.")
 
 with t3:
-    if st.text_input("PIN", type="password") == "1234":
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            st.subheader("Add Customer")
-            c_name = st.text_input("Customer Name")
-            if st.button("Add Customer"): 
-                conn.table("customer_master").insert({"name": c_name}).execute()
-                st.rerun()
-        with col_m2:
-            st.subheader("Add Job Code")
-            j_code = st.text_input("Job Code (e.g. BG-500)")
-            if st.button("Add Job Code"): 
-                conn.table("job_master").insert({"job_code": j_code}).execute()
-                st.rerun()
+    if st.text_input("Admin PIN", type="password") == "1234":
+        c1, c2 = st.columns(2)
+        with c1:
+            new_c = st.text_input("New Customer")
+            if st.button("Add Cust"): conn.table("customer_master").insert({"name": new_c}).execute(); st.rerun()
+        with c2:
+            new_j = st.text_input("New Job Code")
+            if st.button("Add Job"): conn.table("job_master").insert({"job_code": new_j}).execute(); st.rerun()
