@@ -1,7 +1,7 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 1. INITIALIZE CONNECTION & CONFIG
 st.set_page_config(page_title="B&G Progress Hub", layout="wide")
@@ -12,7 +12,6 @@ st.title("🏗️ B&G Professional Dispatcher")
 # --- DATA FETCHING ---
 def get_masters():
     try:
-        # Fetching master data from Supabase
         c_data = conn.table("customer_master").select("name").execute().data
         j_data = conn.table("job_master").select("job_code").execute().data
         return [c['name'] for c in c_data], [j['job_code'] for j in j_data]
@@ -24,7 +23,7 @@ customer_list, job_list = get_masters()
 
 # --- TABS ---
 tab_entry, tab_archive, tab_masters = st.tabs([
-    "📝 New Progress Report", "📂 History & Archive", "🛠️ Masters"
+    "📝 New Progress Report", "📂 History & Weekly Reports", "🛠️ Masters"
 ])
 
 # --- TAB 1: NEW PROGRESS REPORT ---
@@ -51,8 +50,6 @@ with tab_entry:
 
         st.divider()
         st.subheader("📸 Shop Floor Media")
-        
-        # Inputs for photos
         cam_photo = st.camera_input("Take a Live Photo")
         gallery_photos = st.file_uploader("Upload from Gallery", accept_multiple_files=True)
         
@@ -65,93 +62,85 @@ with tab_entry:
                 st.error("Required: Please fill in Engineer Name and Equipment.")
             else:
                 try:
-                    # 1. Save Text Data to Supabase
+                    # 1. Save Text Data
                     res = conn.table("progress_logs").insert({
-                        "customer": cust, 
-                        "engineer": eng, 
-                        "equipment": eq,
-                        "job_code": job, 
-                        "po_no": po, 
-                        "target_date": str(target),
-                        "fab_status": status, 
-                        "remarks": remarks
+                        "customer": cust, "engineer": eng, "equipment": eq,
+                        "job_code": job, "po_no": po, "target_date": str(target),
+                        "fab_status": status, "remarks": remarks
                     }).execute()
                     
                     log_id = res.data[0]['id']
 
-                    # 2. Collect all photos
+                    # 2. Collect & Upload Photos
                     all_pics = []
-                    if cam_photo:
-                        all_pics.append(cam_photo)
-                    if gallery_photos:
-                        all_pics.extend(gallery_photos)
+                    if cam_photo: all_pics.append(cam_photo)
+                    if gallery_photos: all_pics.extend(gallery_photos)
 
-                    # 3. Upload to Storage via the .client
                     if all_pics:
-                        success_count = 0
                         for i, pic in enumerate(all_pics):
-                            # Generate a unique path: reports/ID/timestamp_filename
-                            timestamp = datetime.now().strftime("%H%M%S")
-                            orig_name = getattr(pic, 'name', f"cam_{i}.jpg")
-                            path = f"reports/{log_id}/{timestamp}_{orig_name}"
-                            
-                            try:
-                                # FIXED: Using conn.client and upsert: true
-                                conn.client.storage.from_("progress-photos").upload(
-                                    path=path, 
-                                    file=pic.getvalue(), 
-                                    file_options={"upsert": "true"}
-                                )
-                                success_count += 1
-                            except Exception as upload_err:
-                                st.error(f"Failed to upload {orig_name}: {upload_err}")
-
-                        st.success(f"✅ Report for {eq} saved! {success_count} photos synced.")
-                    else:
-                        st.success(f"✅ Report for {eq} saved (No photos).")
+                            ts = datetime.now().strftime("%H%M%S")
+                            fname = getattr(pic, 'name', f"cam_{ts}_{i}.jpg")
+                            path = f"reports/{log_id}/{fname}"
+                            conn.client.storage.from_("progress-photos").upload(
+                                path=path, file=pic.getvalue(), file_options={"upsert": "true"}
+                            )
                     
+                    st.success(f"✅ Report for {eq} saved successfully!")
                     st.balloons()
-                    # Optional: st.rerun() if you want to clear the form completely
-
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Database Error: {e}")
 
-# --- TAB 2: HISTORY & ARCHIVE (UPDATED) ---
+# --- TAB 2: HISTORY & WEEKLY REPORTS ---
 with tab_archive:
-    st.subheader("📂 Historical Logs")
+    st.subheader("📊 Customer Weekly Review")
+    
+    # Filtering UI
+    filter_col1, filter_col2 = st.columns(2)
+    selected_cust = filter_col1.selectbox("Select Customer for Report", ["All Customers"] + customer_list)
+    
+    # Weekly Logic (Last 7 Days)
+    last_week = datetime.now() - timedelta(days=7)
+    show_only_weekly = filter_col2.checkbox("Show only last 7 days", value=True)
+
     try:
-        history_res = conn.table("progress_logs").select("*").order("created_at", desc=True).execute().data
+        query = conn.table("progress_logs").select("*").order("created_at", desc=True)
+        
+        if selected_cust != "All Customers":
+            query = query.eq("customer", selected_cust)
+        if show_only_weekly:
+            query = query.gte("created_at", last_week.isoformat())
+            
+        history_res = query.execute().data
+
         if history_res:
+            st.write(f"Showing **{len(history_res)}** reports.")
+            
             for log in history_res:
-                # Create a nice card for each report
-                with st.expander(f"📌 {log['customer']} | {log['equipment']} | {log['created_at'][:10]}"):
-                    col_text, col_pics = st.columns([1, 1])
+                with st.expander(f"📦 {log['equipment']} | {log['job_code']} | Status: {log['fab_status']} ({log['created_at'][:10]})"):
+                    c_text, c_img = st.columns([1, 1])
+                    with c_text:
+                        st.markdown(f"**Customer:** {log['customer']}")
+                        st.markdown(f"**Engineer:** {log['engineer']}")
+                        st.markdown(f"**PO No:** {log['po_no']}")
+                        st.markdown(f"**Remarks:** {log['remarks']}")
                     
-                    with col_text:
-                        st.write(f"**Engineer:** {log['engineer']}")
-                        st.write(f"**Job Code:** {log['job_code']}")
-                        st.write(f"**Status:** :blue[{log['fab_status']}]")
-                        st.write(f"**Target Date:** {log['target_date']}")
-                        st.info(f"**Remarks:** {log['remarks']}")
-                    
-                    with col_pics:
-                        st.write("**Shop Floor Photos:**")
-                        # 1. List files in the specific folder for this log ID
-                        folder_path = f"reports/{log['id']}"
-                        files = conn.client.storage.from_("progress-photos").list(folder_path)
-                        
+                    with c_img:
+                        f_path = f"reports/{log['id']}"
+                        files = conn.client.storage.from_("progress-photos").list(f_path)
                         if files:
-                            # 2. Display each photo found
-                            for f in files:
-                                # Get the public URL for the image
-                                img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder_path}/{f['name']}")
-                                st.image(img_url, use_container_width=True)
+                            # Display photos in a grid
+                            cols = st.columns(2)
+                            for idx, f in enumerate(files):
+                                url = conn.client.storage.from_("progress-photos").get_public_url(f"{f_path}/{f['name']}")
+                                cols[idx % 2].image(url, use_container_width=True)
                         else:
-                            st.caption("No photos uploaded for this report.")
+                            st.caption("No photos available.")
         else:
-            st.info("No reports found yet.")
+            st.info("No reports found for the selected criteria.")
+            
     except Exception as e:
-        st.error(f"Could not load history: {e}")
+        st.error(f"Error loading archive: {e}")
 
 # --- TAB 3: MASTERS MANAGEMENT ---
 with tab_masters:
@@ -160,26 +149,22 @@ with tab_masters:
     
     if admin_pin == "1234":
         st.success("Access Granted")
-        m_col1, m_col2 = st.columns(2)
-        
-        with m_col1:
+        m1, m2 = st.columns(2)
+        with m1:
             st.write("### 🏢 Customers")
-            with st.form("add_customer", clear_on_submit=True):
-                new_cust = st.text_input("New Customer Name")
-                if st.form_submit_button("Add Customer"):
-                    if new_cust:
-                        conn.table("customer_master").insert({"name": new_cust}).execute()
-                        st.rerun()
-            st.write("Current:", customer_list)
-            
-        with m_col2:
+            with st.form("add_cust", clear_on_submit=True):
+                n_cust = st.text_input("New Customer Name")
+                if st.form_submit_button("Add Customer") and n_cust:
+                    conn.table("customer_master").insert({"name": n_cust}).execute()
+                    st.rerun()
+            st.write("List:", customer_list)
+        with m2:
             st.write("### 🔢 Job Codes")
             with st.form("add_job", clear_on_submit=True):
-                new_job = st.text_input("New Job Code")
-                if st.form_submit_button("Add Job"):
-                    if new_job:
-                        conn.table("job_master").insert({"job_code": new_job}).execute()
-                        st.rerun()
-            st.write("Current:", job_list)
+                n_job = st.text_input("New Job Code")
+                if st.form_submit_button("Add Job") and n_job:
+                    conn.table("job_master").insert({"job_code": n_job}).execute()
+                    st.rerun()
+            st.write("List:", job_list)
     else:
         st.info("Enter PIN '1234' to edit Master Data.")
