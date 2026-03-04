@@ -150,7 +150,10 @@ with t1:
             if f_photos and res.data:
                 new_id = str(res.data[0]['id'])
                 for p in f_photos:
-                    conn.client.storage.from_("progress-photos").upload(path=f"{new_id}/{p.name}", file=p.getvalue())
+                    conn.client.storage.from_("progress-photos").upload(path=f"{new_id}/{p.name}", 
+    file=p.getvalue(),
+    file_options={"upsert": "true"}
+)
             st.success("Entry Locked and Synced!"); st.rerun()
 
 # --- TAB 2: ARCHIVE & DELETE ---
