@@ -52,12 +52,6 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         pdf.ln(5)
 
-        # Milestone Table (Matches your 24 fields)
-        pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
-        pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
-        pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
-        pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
-
         ms_list = [
             ("Drawing Submission", 'draw_sub', 'draw_sub_note'),
             ("Drawing Approval", 'draw_app', 'draw_app_note'),
@@ -75,7 +69,6 @@ def create_bulk_pdf(customer_name, logs_list):
             pdf.cell(40, 7, f" {log.get(skey, 'In-Progress')}", 1)
             pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
             
-    # CRITICAL FIX: Ensure output is returned as bytes for Streamlit
     return bytes(pdf.output())
 
 @st.cache_data(ttl=5)
@@ -92,13 +85,13 @@ t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
     st.markdown("### 📸 Job-wise Photos")
-    job_photos = st.file_uploader("Upload Fabrication/Site Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    job_photos = st.file_uploader("Upload 2-3 Fabrication/Site Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
 
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         cust = col1.selectbox("Customer", c_list)
         job = col2.selectbox("Job Code", j_list)
-        eq = col3.text_input("Equipment")
+        eq = col3.text_input("Equipment (e.g., 5KL SSR)")
 
         col4, col5, col6 = st.columns(3)
         po_n = col4.text_input("PO No.")
@@ -109,6 +102,7 @@ with t1:
         po_disp = col7.date_input("PO Disp. Date")
         rev_del = col8.date_input("Revised Dispatch Date")
 
+        # Milestone Rows
         def custom_row(label, opts, skey, nkey):
             c1, c2 = st.columns([1, 2])
             s = c1.selectbox(label, opts, key=skey)
@@ -138,9 +132,7 @@ with t1:
             if job_photos:
                 for photo in job_photos:
                     path = f"{job}_{photo.name}"
-                    conn.client.storage.from_("project-photos").upload(
-                        path=path, file=photo.getvalue(), file_options={"content-type": photo.type}
-                    )
+                    conn.client.storage.from_("project-photos").upload(path=path, file=photo.getvalue())
 
             st.success("Successfully Synchronized!")
             st.rerun()
@@ -153,25 +145,22 @@ with t2:
     
     if data:
         if sel_cust != "All":
-            # RECTIFIED PDF DOWNLOAD
-            pdf_data = create_bulk_pdf(sel_cust, data)
-            st.download_button("📥 Download Official PDF", data=pdf_data, file_name=f"BG_{sel_cust}.pdf", mime="application/pdf")
+            pdf_bytes = create_bulk_pdf(sel_cust, data)
+            st.download_button("📥 Download PDF", data=pdf_bytes, file_name=f"BG_{sel_cust}.pdf", mime="application/pdf")
         
         for log in data:
-            current_job = log.get('job_code')
-            with st.expander(f"📦 Job: {current_job} | Eq: {log.get('equipment')}"):
+            curr_job = log.get('job_code')
+            with st.expander(f"📦 Job: {curr_job} | Eq: {log.get('equipment')}"):
                 
-                # RECTIFIED PHOTO FETCHING
+                # --- PHOTO RETRIEVAL LOGIC ---
                 try:
-                    all_files = conn.client.storage.from_("project-photos").list()
-                    # Filters files that start with this specific Job Code
-                    job_files = [f['name'] for f in all_files if f['name'].startswith(current_job)]
-                    if job_files:
-                        st.markdown("**📸 Progress Photos:**")
+                    all_f = conn.client.storage.from_("project-photos").list()
+                    job_f = [f['name'] for f in all_f if f['name'].startswith(curr_job)]
+                    if job_f:
                         cols = st.columns(4)
-                        for idx, f_name in enumerate(job_files):
-                            img_url = conn.client.storage.from_("project-photos").get_public_url(f_name)
-                            cols[idx % 4].image(img_url, use_container_width=True)
+                        for i, fn in enumerate(job_f):
+                            url = conn.client.storage.from_("project-photos").get_public_url(fn)
+                            cols[i % 4].image(url, use_container_width=True)
                 except: pass
 
                 st.table([
