@@ -39,7 +39,7 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
 
-        # Primary Info Table (Using 'PO Disp. Date' instead of Target Dispatch)
+        # Primary Info Table - All 8 fields included
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
@@ -54,13 +54,13 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         pdf.ln(5)
 
-        # Milestone Table
+        # Milestone Table - All 9 items from PDF included
         pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
         pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
         pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
         pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
 
-        ms_items = [
+        ms_list = [
             ("Drawing Submission", 'draw_sub', 'draw_sub_note'),
             ("Drawing Approval", 'draw_app', 'draw_app_note'),
             ("RM Status", 'rm_status', 'rm_note'),
@@ -72,7 +72,7 @@ def create_bulk_pdf(customer_name, logs_list):
             ("FAT", 'fat_stat', 'fat_note')
         ]
         pdf.set_font("helvetica", "", 8)
-        for label, skey, nkey in ms_items:
+        for label, skey, nkey in ms_list:
             pdf.cell(70, 7, f" {label}", 1)
             pdf.cell(40, 7, f" {log.get(skey, 'In-Progress')}", 1)
             pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
@@ -97,7 +97,7 @@ with t1:
         col1, col2, col3 = st.columns(3)
         cust = col1.selectbox("Customer", c_list)
         job = col2.selectbox("Job Code", j_list)
-        eq = col3.text_input("Equipment")
+        eq = col3.text_input("Equipment (e.g., 5KL SSR)")
 
         col4, col5, col6 = st.columns(3)
         po_n = col4.text_input("PO No.")
@@ -108,24 +108,32 @@ with t1:
         po_disp = col7.date_input("PO Disp. Date")
         rev_del = col8.date_input("Revised Dispatch Date")
 
-        st.markdown("### 📊 Update All Milestones")
-        def milestone_entry(label, s_key, r_key):
+        st.markdown("### 📊 Unique Milestone Updates")
+        
+        # DEFINING UNIQUE DROPDOWN LISTS PER CATEGORY
+        draw_opts = ["In-Progress", "Submitted", "Revised", "Approved", "N/A"]
+        rm_opts = ["In-Progress", "Ordered", "Partially Received", "Received", "N/A"]
+        fab_opts = ["In-Progress", "Shell Welding", "Jacket Welding", "Structure", "Completed"]
+        test_opts = ["In-Progress", "Hydro-Test", "Pneumatic-Test", "Completed"]
+        qc_opts = ["In-Progress", "QC Cleared", "Ready for Dispatch", "Dispatched"]
+        
+        def custom_row(label, opts, skey, nkey):
             c1, c2 = st.columns([1, 2])
-            s = c1.selectbox(label, ["In-Progress", "Completed", "Submitted", "Approved", "Received", "N/A"], key=s_key)
-            r = c2.text_input(f"Remarks for {label}", key=r_key)
-            return s, r
+            s = c1.selectbox(label, opts, key=skey)
+            n = c2.text_input(f"Remarks for {label}", key=nkey)
+            return s, n
 
-        d_s, d_n = milestone_entry("Drawing Submission", "s1", "n1")
-        da_s, da_n = milestone_entry("Drawing Approval", "s2", "n2")
-        rm_s, rm_n = milestone_entry("RM Status", "s3", "n3")
-        sd_s, sd_n = milestone_entry("Sub-deliveries", "s4", "n4")
-        fb_s, fb_n = milestone_entry("Fabrication", "s5", "n5")
-        bf_s, bf_n = milestone_entry("Buffing/Finishing", "s6", "n6")
-        ts_s, ts_n = milestone_entry("Testing", "s7", "n7")
-        qc_s, qc_n = milestone_entry("QC Status", "s8", "n8")
-        fat_s, fat_n = milestone_entry("FAT Status", "s9", "n9")
+        d_s, d_n = custom_row("Drawing Submission", draw_opts, "s1", "n1")
+        da_s, da_n = custom_row("Drawing Approval", ["In-Progress", "Approved", "Conditional"], "s2", "n2")
+        rm_s, rm_n = custom_row("RM Status", rm_opts, "s3", "n3")
+        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4")
+        fb_s, fb_n = custom_row("Fabrication Status", fab_opts, "s5", "n5")
+        bf_s, bf_n = custom_row("Buffing/Finishing Status", ["In-Progress", "Internal", "Mirror", "Completed"], "s6", "n6")
+        ts_s, ts_n = custom_row("Testing", test_opts, "s7", "n7")
+        qc_s, qc_n = custom_row("QC/Dispatch Status", qc_opts, "s8", "n8")
+        fat_s, fat_n = custom_row("FAT", ["In-Progress", "Scheduled", "Completed"], "s9", "n9")
 
-        if st.form_submit_button("🚀 Sync to Cloud"):
+        if st.form_submit_button("🚀 Sync All Fields to Cloud"):
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -135,32 +143,33 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n,
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
-            st.success("Entry Saved Successfully!"); st.rerun()
+            st.success("24 Fields Synchronized Successfully!"); st.rerun()
 
 with t2:
-    sel_cust = st.selectbox("Select Customer", ["All"] + c_list)
+    sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
     if sel_cust != "All": query = query.eq("customer", sel_cust)
     data = query.execute().data
     
     if data:
         if sel_cust != "All":
-            st.download_button("📥 Download Report", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
+            st.download_button("📥 Download Official PDF", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
         
         for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code')} - {log.get('equipment')}"):
+            with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
                 st.table([
                     {"Milestone": "Drawing", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
+                    {"Milestone": "RM Status", "Status": log.get('rm_status'), "Note": log.get('rm_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
-                    {"Milestone": "QC Status", "Status": log.get('qc_stat'), "Note": log.get('qc_note')}
+                    {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
                 ])
 
 with t3:
-    if st.text_input("PIN", type="password") == "1234":
+    if st.text_input("Admin PIN", type="password") == "1234":
         c1, c2 = st.columns(2)
         with c1:
-            nc = st.text_input("New Customer Name")
-            if st.button("Add Customer"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
+            nc = st.text_input("Add New Customer")
+            if st.button("Save Customer"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
         with c2:
-            nj = st.text_input("New Job Code")
-            if st.button("Add Job Code"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
+            nj = st.text_input("Add New Job Code")
+            if st.button("Save Job Code"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
