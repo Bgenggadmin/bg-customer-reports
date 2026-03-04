@@ -29,7 +29,7 @@ MILESTONE_MAP = [
 customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
 jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-# --- PDF ENGINE (INCORPORATED ENHANCEMENTS HERE) ---
+# --- PDF ENGINE (RECTIFIED SECTION) ---
 def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -69,22 +69,25 @@ def generate_pdf(logs):
             if img_res.status_code == 200:
                 img = Image.open(BytesIO(img_res.content)).convert('RGB')
                 img.thumbnail((350, 350))
-                buf = BytesIO(); img.save(buf, format="JPEG")
+                buf = BytesIO()
+                img.save(buf, format="JPEG")
                 pdf.image(buf, x=75, y=pdf.get_y()+5, w=60)
                 pdf.set_y(pdf.get_y() + 55)
-        except: pdf.ln(5)
+        except: 
+            pdf.ln(5)
 
         # 5. Milestone Table with Color Coding
         pdf.set_font("Arial", "B", 9)
-        pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
+        pdf.set_fill_color(0, 51, 102)
+        pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
         pdf.cell(35, 8, " Status", 1, 0, 'C', True)
         pdf.cell(95, 8, " Remarks", 1, 1, 'L', True)
         
-        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "", 8)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Arial", "", 8)
         for label, s_key, n_key in MILESTONE_MAP:
             status = str(log.get(s_key, 'Pending'))
-            # Apply color based on status
             if status in ["Completed", "Approved", "Submitted"]:
                 pdf.set_fill_color(144, 238, 144) # Green
             elif status in ["In-Progress", "Hold"]:
@@ -155,7 +158,6 @@ with tab1:
 
 with tab2:
     st.subheader("📂 Report Archive")
-    
     cust_list = ["All Customers"] + customers
     selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
     
