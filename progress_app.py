@@ -6,11 +6,11 @@ import os, requests
 from io import BytesIO
 from PIL import Image
 
-# 1. INITIALIZE CONNECTION & CONFIG
+# 1. INITIALIZE
 st.set_page_config(page_title="B&G Hub Master", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- PDF GENERATOR (VERIFIED 24+ FIELDS) ---
+# --- PDF GENERATOR (ALL 24+ FIELDS INCLUDED) ---
 class ProgressPDF(FPDF):
     def header(self):
         self.set_font("helvetica", "B", 14)
@@ -25,9 +25,9 @@ def create_report_pdf(logs_list):
         pdf.add_page()
         pdf.set_font("helvetica", "B", 10)
         pdf.set_fill_color(240, 240, 240)
-        pdf.cell(0, 8, f" JOB CODE: {log.get('job_code')} | REPORT DATE: {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
+        pdf.cell(0, 8, f" JOB CODE: {log.get('job_code')} | DATE: {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         
-        # --- HEADER FIELDS (8 FIELDS) ---
+        # --- HEADER (8 FIELDS) ---
         pdf.set_font("helvetica", "B", 8)
         h_data = [
             ("Customer", log.get('customer')), ("Equipment", log.get('equipment')),
@@ -39,170 +39,122 @@ def create_report_pdf(logs_list):
             pdf.cell(30, 7, h_data[i][0], 1, 0, 'L', True); pdf.cell(65, 7, str(h_data[i][1]), 1, 0)
             pdf.cell(30, 7, h_data[i+1][0], 1, 0, 'L', True); pdf.cell(65, 7, str(h_data[i+1][1]), 1, 1)
 
-        # --- MILESTONE TABLE (9 ROWS / 18 FIELDS) ---
+        # --- MILESTONES (18 FIELDS) ---
         pdf.ln(3)
         pdf.set_font("helvetica", "B", 8)
-        pdf.cell(60, 7, " Milestone Item", 1, 0, 'L', True); pdf.cell(35, 7, " Status", 1, 0, 'L', True); pdf.cell(95, 7, " Detailed Remarks", 1, 1, 'L', True)
-        
+        pdf.cell(60, 7, " Milestone", 1, 0, 'L', True); pdf.cell(35, 7, " Status", 1, 0, 'L', True); pdf.cell(95, 7, " Remarks", 1, 1, 'L', True)
         pdf.set_font("helvetica", "", 8)
-        ms_mapping = [
+        ms = [
             ("Drawing Submission", 'draw_sub', 'draw_sub_note'), ("Drawing Approval", 'draw_app', 'draw_app_note'),
             ("RM Status", 'rm_status', 'rm_note'), ("Sub-deliveries", 'sub_del', 'sub_del_note'),
             ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing Status", 'buff_stat', 'buff_note'),
             ("Testing Status", 'testing', 'test_note'), ("QC Status", 'qc_stat', 'qc_note'), ("FAT Status", 'fat_stat', 'fat_note')
         ]
-        for label, skey, nkey in ms_mapping:
-            pdf.cell(60, 6, label, 1)
-            pdf.cell(35, 6, str(log.get(skey, '-')), 1)
-            pdf.cell(95, 6, str(log.get(nkey, '-')), 1, 1)
+        for label, skey, nkey in ms:
+            pdf.cell(60, 6, label, 1); pdf.cell(35, 6, str(log.get(skey, '-')), 1); pdf.cell(95, 6, str(log.get(nkey, '-')), 1, 1)
 
-        # --- PHOTO INTEGRATION (UNIQUE FOLDER LOGIC) ---
+        # --- PHOTOS IN PDF ---
         entry_id = str(log.get('id'))
         try:
             res = conn.client.storage.from_("progress-photos").list(path=entry_id)
             if res:
-                pdf.ln(5)
-                y_pos = pdf.get_y()
-                for idx, f_obj in enumerate(res[:4]): # Show top 4
-                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{entry_id}/{f_obj['name']}")
-                    img_data = requests.get(url).content
-                    img = Image.open(BytesIO(img_data)).convert('RGB')
-                    img.thumbnail((300, 400))
-                    buf = BytesIO()
-                    img.save(buf, format='JPEG', quality=60)
-                    col = idx % 4
-                    pdf.image(buf, 10 + (col * 48), y_pos, 40, 45)
+                pdf.ln(5); y_p = pdf.get_y()
+                for idx, f in enumerate(res[:4]):
+                    u = conn.client.storage.from_("progress-photos").get_public_url(f"{entry_id}/{f['name']}")
+                    img = Image.open(BytesIO(requests.get(u).content)).convert('RGB')
+                    img.thumbnail((300, 400)); buf = BytesIO(); img.save(buf, format='JPEG', quality=50)
+                    pdf.image(buf, 10 + ((idx % 4) * 48), y_p, 40, 45)
         except: pass
     return bytes(pdf.output())
 
-# --- REVISED DATA LOAD (Safe against empty tables) ---
-try:
-    c_res = conn.table("customer_master").select("name").execute()
-    j_res = conn.table("job_master").select("job_code").execute()
-    
-    # Use empty lists if tables are wiped
-    customers = sorted([d['name'] for d in c_res.data]) if c_res.data else []
-    jobs = sorted([d['job_code'] for d in j_res.data]) if j_res.data else []
-except Exception as e:
-    st.error("Database connection failed. Please check your Supabase credentials.")
-    customers, jobs = [], []
+# --- DATA FETCH ---
+customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
+jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-# --- INITIALIZE TABS (Ensures t1, t2, t3 always exist) ---
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
-# --- TAB 1: FORM (ALL 24+ FIELDS) ---
+# --- TAB 1: NEW ENTRY (MULTI-PHOTO & UPSERT FIX) ---
 with t1:
-    with st.form("main_sync_form", clear_on_submit=True):
+    with st.form("entry_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
-        f_cust = c1.selectbox("Customer", customers)
-        f_job = c2.selectbox("Job Code", jobs)
-        f_eq = c3.text_input("Equipment Name")
-        
+        cust, job, eq = c1.selectbox("Customer", customers), c2.selectbox("Job", jobs), c3.text_input("Equipment")
         c4, c5, c6 = st.columns(3)
-        f_po_n = c4.text_input("PO Number")
-        f_po_d = c5.date_input("PO Date")
-        f_eng = c6.text_input("Responsible Engineer")
-        
+        po_n, po_d, eng = c4.text_input("PO No."), c5.date_input("PO Date"), c6.text_input("Engineer")
         c7, c8 = st.columns(2)
-        f_p_del = c7.date_input("Contractual Delivery Date")
-        f_r_del = c8.date_input("Estimated Dispatch Date")
-
-        st.markdown("---")
-        # 1. Drawing Sub (Unique Dropdown)
-        r1a, r1b = st.columns([1,2])
-        v1s = r1a.selectbox("Drawing Submission", ["In-Progress", "Submitted"])
-        v1n = r1b.text_input("Remarks: Drawing Submission")
+        p_del, r_del = c7.date_input("PO Delivery"), c8.date_input("Revised Dispatch")
         
-        # 2. Drawing App (Unique Dropdown)
-        r2a, r2b = st.columns([1,2])
-        v2s = r2a.selectbox("Drawing Approval", ["Pending", "Approved"])
-        v2n = r2b.text_input("Remarks: Drawing Approval")
+        # All 9 Milestone Rows
+        def m_row(label, sid, nid, opts=["Pending", "In-Progress", "Hold", "Completed"]):
+            col_a, col_b = st.columns([1,2])
+            return col_a.selectbox(label, opts, key=sid), col_b.text_input(f"Remarks: {label}", key=nid)
 
-        def milestone_ui(label, key_id):
-            ca, cb = st.columns([1,2])
-            s = ca.selectbox(label, ["Pending", "In-Progress", "Hold", "Completed"], key=f"s_{key_id}")
-            n = cb.text_input(f"Remarks: {label}", key=f"n_{key_id}")
-            return s, n
+        s1, n1 = m_row("Drawing Submission", "s1", "n1", ["In-Progress", "Submitted"])
+        s2, n2 = m_row("Drawing Approval", "s2", "n2", ["Pending", "Approved"])
+        s3, n3 = m_row("RM Status", "s3", "n3")
+        s4, n4 = m_row("Sub-deliveries", "s4", "n4")
+        s5, n5 = m_row("Fabrication Status", "s5", "n5")
+        s6, n6 = m_row("Buffing Status", "s6", "n6")
+        s7, n7 = m_row("Testing Status", "s7", "n7")
+        s8, n8 = m_row("QC Status", "s8", "n8")
+        s9, n9 = m_row("FAT Status", "s9", "n9")
 
-        v3s, v3n = milestone_ui("RM Status", "rm")
-        v4s, v4n = milestone_ui("Sub-deliveries", "sd")
-        v5s, v5n = milestone_ui("Fabrication Status", "fb")
-        v6s, v6n = milestone_ui("Buffing Status", "bf")
-        v7s, v7n = milestone_ui("Testing Status", "ts")
-        v8s, v8n = milestone_ui("QC Status", "qc")
-        v9s, v9n = milestone_ui("FAT Status", "fa")
-
-        st.markdown("---")
         f_photos = st.file_uploader("Upload Progress Photos", accept_multiple_files=True)
 
-        if st.form_submit_button("🚀 Synchronize Data & Photos"):
-            # DB INSERT
+        if st.form_submit_button("🚀 Sync Entry"):
             res = conn.table("progress_logs").insert({
-                "customer": f_cust, "job_code": f_job, "equipment": f_eq, "po_no": f_po_n, 
-                "po_date": str(f_po_d), "engineer": f_eng, "po_delivery_date": str(f_p_del), "exp_dispatch_date": str(f_r_del),
-                "draw_sub": v1s, "draw_sub_note": v1n, "draw_app": v2s, "draw_app_note": v2n,
-                "rm_status": v3s, "rm_note": v3n, "sub_del": v4s, "sub_del_note": v4n,
-                "fab_status": v5s, "remarks": v5n, "buff_stat": v6s, "buff_note": v6n,
-                "testing": v7s, "test_note": v7n, "qc_stat": v8s, "qc_note": v8n, "fat_stat": v9s, "fat_note": v9n
+                "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d), "engineer": eng,
+                "po_delivery_date": str(p_del), "exp_dispatch_date": str(r_del),
+                "draw_sub": s1, "draw_sub_note": n1, "draw_app": s2, "draw_app_note": n2,
+                "rm_status": s3, "rm_note": n3, "sub_del": s4, "sub_del_note": n4,
+                "fab_status": s5, "remarks": n5, "buff_stat": s6, "buff_note": n6,
+                "testing": s7, "test_note": n7, "qc_stat": s8, "qc_note": n8, "fat_stat": s9, "fat_note": n9
             }).execute()
             
-            # UNIQUE ID FOLDER STORAGE
             if f_photos and res.data:
                 new_id = str(res.data[0]['id'])
                 for p in f_photos:
-                    conn.client.storage.from_("progress-photos").upload(path=f"{new_id}/{p.name}", 
-    file=p.getvalue(),
-    file_options={"upsert": "true"}
-)
-            st.success("Entry Locked and Synced!"); st.rerun()
+                    conn.client.storage.from_("progress-photos").upload(
+                        path=f"{new_id}/{p.name}", file=p.getvalue(), file_options={"upsert": "true"}
+                    )
+            st.success("Entry Saved!"); st.rerun()
 
-# --- TAB 2: ARCHIVE & DELETE ---
+# --- TAB 2: ARCHIVE (PDF & PHOTO GALLERY) ---
 with t2:
-    sel_customer = st.selectbox("View by Customer", ["All"] + customers)
+    sel_cust = st.selectbox("Filter Customer", ["All"] + customers)
     query = conn.table("progress_logs").select("*").order("id", desc=True)
-    if sel_customer != "All": query = query.eq("customer", sel_customer)
-    archive_data = query.execute().data
+    if sel_cust != "All": query = query.eq("customer", sel_cust)
+    data = query.execute().data
     
-    if archive_data:
-        if sel_customer != "All":
-            st.download_button(f"📥 Download {sel_customer} Report", create_report_pdf(archive_data), f"{sel_customer}_Status.pdf")
+    if data:
+        if sel_cust != "All":
+            st.download_button(f"📥 Download {sel_cust} PDF", create_report_pdf(data), f"Report_{sel_cust}.pdf")
         
-        for entry in archive_data:
-            col_info, col_del = st.columns([6, 1])
-            col_info.write(f"**ID: {entry['id']}** | Job: {entry['job_code']} | {entry['customer']}")
-            
-            if col_del.button("🗑️", key=f"del_{entry['id']}"):
-                # 1. Clean Storage Folder First
+        for log in data:
+            c_h, c_d = st.columns([6,1])
+            c_h.write(f"**ID: {log['id']} | Job: {log['job_code']}** - {log['customer']}")
+            if c_d.button("🗑️", key=f"del_{log['id']}"):
                 try:
-                    folder_files = conn.client.storage.from_("progress-photos").list(path=str(entry['id']))
-                    if folder_files:
-                        conn.client.storage.from_("progress-photos").remove([f"{entry['id']}/{f['name']}" for f in folder_files])
+                    f_list = conn.client.storage.from_("progress-photos").list(path=str(log['id']))
+                    if f_list: conn.client.storage.from_("progress-photos").remove([f"{log['id']}/{f['name']}" for f in f_list])
                 except: pass
-                # 2. Delete DB Entry
-                conn.table("progress_logs").delete().eq("id", entry['id']).execute()
-                st.warning(f"Deleted Entry {entry['id']}"); st.rerun()
+                conn.table("progress_logs").delete().eq("id", log['id']).execute(); st.rerun()
             
-            with st.expander("Full Data & Photo Preview"):
-                # Gallery
-                entry_photos = conn.client.storage.from_("progress-photos").list(path=str(entry['id']))
-                if entry_photos:
-                    gal = st.columns(6)
-                    for i, photo in enumerate(entry_photos):
-                        url = conn.client.storage.from_("progress-photos").get_public_url(f"{entry['id']}/{photo['name']}")
-                        gal[i % 6].image(url)
-                st.table({k: [v] for k, v in entry.items()})
+            with st.expander("Show Detailed Photos & Data"):
+                # Multi-Photo Gallery
+                p_list = conn.client.storage.from_("progress-photos").list(path=str(log['id']))
+                if p_list:
+                    cols = st.columns(5)
+                    for i, p in enumerate(p_list):
+                        url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}/{p['name']}")
+                        cols[i % 5].image(url, use_container_width=True)
+                st.table({k: [v] for k, v in log.items()})
 
 # --- TAB 3: MASTERS ---
 with t3:
-    st.info("Add/Remove Masters below to update dropdowns in 'New Entry'.")
-    m_col1, m_col2 = st.columns(2)
-    with m_col1:
-        st.subheader("Manage Customers")
-        nc = st.text_input("Add Customer Name")
-        if st.button("Save Customer") and nc:
-            conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
-    with m_col2:
-        st.subheader("Manage Job Codes")
-        nj = st.text_input("Add Job Code")
-        if st.button("Save Job Code") and nj:
-            conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
+    col_ma, col_mb = st.columns(2)
+    with col_ma:
+        nc = st.text_input("New Customer")
+        if st.button("Add Cust"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
+    with col_mb:
+        nj = st.text_input("New Job Code")
+        if st.button("Add Job"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
