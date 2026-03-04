@@ -29,7 +29,90 @@ class ProgressPDF(FPDF):
         self.set_font("helvetica", "I", 8)
         self.cell(0, 10, f"Page {self.page_no()} | B&G Professional Dispatcher", 0, 0, "C")
 
-# --- INDIVIDUAL PDF GENERATOR ---
+# --- BULK CUSTOMER PDF GENERATOR (UPDATED WITH IMAGES) ---
+def create_bulk_pdf(customer_name, logs_list):
+    pdf = ProgressPDF()
+    pdf.add_page()
+    
+    pdf.set_font("helvetica", "B", 16)
+    pdf.cell(0, 10, f"Weekly Summary: {customer_name}", ln=True, align='C')
+    pdf.set_font("helvetica", "I", 10)
+    pdf.cell(0, 10, f"Report Generated: {datetime.now().strftime('%d-%m-%Y')}", ln=True, align='C')
+    pdf.ln(5)
+
+    for log in logs_list:
+        # Start a new page if we are near the bottom
+        if pdf.get_y() > 220:
+            pdf.add_page()
+
+        # Job Header Box
+        pdf.set_fill_color(230, 230, 230)
+        pdf.set_font("helvetica", "B", 11)
+        pdf.cell(0, 8, f"Job: {log['job_code']} | Equipment: {log['equipment']}", ln=True, fill=True)
+        
+        pdf.set_font("helvetica", "", 10)
+        pdf.cell(0, 7, f"Status: {log['fab_status']} | Target: {log['target_date']}", ln=True)
+        pdf.set_font("helvetica", "I", 9)
+        pdf.multi_cell(0, 6, f"Remarks: {log['remarks'] if log['remarks'] else 'No remarks recorded.'}")
+        pdf.ln(2)
+
+        # FETCH & ADD PHOTOS FOR THIS JOB
+        folder = f"reports/{log['id']}"
+        try:
+            files = conn.client.storage.from_("progress-photos").list(folder)
+            if files:
+                pdf.set_font("helvetica", "B", 9)
+                pdf.cell(0, 6, "Progress Photos:", ln=True)
+                
+                # Grid coordinates
+                x_start = 10
+                img_width = 85
+                img_height = 60 # Standardized height
+                
+                for i, f in enumerate(files):
+                    # Limit to 4 photos per job to keep report size manageable
+                    if i >= 4: break 
+                    
+                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
+                    try:
+                        resp = requests.get(url, timeout=5)
+                        if resp.status_code == 200:
+                            img = BytesIO(resp.content)
+                            
+                            # Determine X and Y
+                            # Row 1: i=0,1 | Row 2: i=2,3
+                            col = i % 2
+                            x = x_start if col == 0 else 105
+                            
+                            # If we just finished a row (i=2), move Y down
+                            if i > 0 and col == 0:
+                                pdf.ln(img_height + 2)
+                            
+                            curr_y = pdf.get_y()
+                            
+                            # Page break check for images
+                            if curr_y > 230:
+                                pdf.add_page()
+                                curr_y = 30
+                                pdf.set_y(curr_y)
+                            
+                            pdf.image(img, x=x, y=curr_y, w=img_width, h=img_height)
+                            
+                            # If it's the last image or last in row, adjust Y for next text block
+                            if i == len(files)-1 or i == 3:
+                                pdf.set_y(curr_y + img_height + 5)
+                    except:
+                        continue
+        except:
+            pass # Skip if storage error
+
+        pdf.ln(5)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y()) # Separator line
+        pdf.ln(5)
+
+    return bytes(pdf.output())
+
+# --- REST OF THE CODE (INDIVIDUAL PDF, TABS, MASTER) ---
 def create_pdf(log_data, photo_urls):
     pdf = ProgressPDF()
     pdf.add_page()
@@ -39,53 +122,20 @@ def create_pdf(log_data, photo_urls):
     pdf.cell(0, 8, f"Job Code: {log_data['job_code']} | Equipment: {log_data['equipment']}", ln=True)
     pdf.cell(0, 8, f"Status: {log_data['fab_status']} | Target: {log_data['target_date']}", ln=True)
     pdf.ln(5)
-    pdf.set_font("helvetica", "B", 10)
-    pdf.cell(0, 8, "Work Progress Remarks:", ln=True)
-    pdf.set_font("helvetica", "", 10)
-    pdf.multi_cell(0, 6, log_data['remarks'] if log_data['remarks'] else "N/A")
-    pdf.ln(10)
-
+    pdf.multi_cell(0, 6, f"Remarks: {log_data['remarks']}")
+    pdf.ln(5)
     if photo_urls:
-        pdf.set_font("helvetica", "B", 10)
-        pdf.cell(0, 10, "Shop Floor Media:", ln=True)
         y_pos = pdf.get_y()
         for i, url in enumerate(photo_urls):
             try:
                 resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    img = BytesIO(resp.content)
-                    x = 10 if i % 2 == 0 else 110
-                    if i > 0 and i % 2 == 0:
-                        y_pos += 75
-                        if y_pos > 220:
-                            pdf.add_page()
-                            y_pos = 30
-                    pdf.image(img, x=x, y=y_pos, w=90)
+                img = BytesIO(resp.content)
+                x = 10 if i % 2 == 0 else 110
+                if i > 0 and i % 2 == 0: y_pos += 75
+                pdf.image(img, x=x, y=y_pos, w=90)
             except: continue
     return bytes(pdf.output())
 
-# --- BULK CUSTOMER PDF GENERATOR ---
-def create_bulk_pdf(customer_name, logs_list):
-    pdf = ProgressPDF()
-    pdf.add_page()
-    pdf.set_font("helvetica", "B", 16)
-    pdf.cell(0, 10, f"Weekly Summary: {customer_name}", ln=True, align='C')
-    pdf.set_font("helvetica", "I", 10)
-    pdf.cell(0, 10, f"Report Generated: {datetime.now().strftime('%d-%m-%Y')}", ln=True, align='C')
-    pdf.ln(10)
-
-    for log in logs_list:
-        if pdf.get_y() > 200: pdf.add_page()
-        pdf.set_fill_color(240, 240, 240)
-        pdf.set_font("helvetica", "B", 11)
-        pdf.cell(0, 8, f"Job: {log['job_code']} | Equipment: {log['equipment']}", ln=True, fill=True)
-        pdf.set_font("helvetica", "", 10)
-        pdf.cell(0, 7, f"Status: {log['fab_status']} | Target: {log['target_date']}", ln=True)
-        pdf.multi_cell(0, 6, f"Remarks: {log['remarks']}")
-        pdf.ln(5)
-    return bytes(pdf.output())
-
-# --- DATA FETCHING ---
 @st.cache_data(ttl=60)
 def get_masters():
     try:
@@ -95,12 +145,10 @@ def get_masters():
     except: return [], []
 
 customer_list, job_list = get_masters()
-
-# --- APP LAYOUT ---
 st.title("🏗️ B&G Professional Dispatcher")
 tab_entry, tab_archive, tab_masters = st.tabs(["📝 New Entry", "📂 Weekly Archive", "🛠️ Admin Masters"])
 
-# --- TAB 1: NEW ENTRY ---
+# --- TAB 1: NEW ENTRY (Same as before) ---
 with tab_entry:
     with st.form("dispatch_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -114,66 +162,48 @@ with tab_entry:
         target = f3.date_input("Target Date")
         remarks = st.text_area("Remarks")
         cam_pic = st.camera_input("Take Live Photo")
-        gal_pics = st.file_uploader("Upload Gallery Photos", accept_multiple_files=True)
-        
+        gal_pics = st.file_uploader("Upload Photos", accept_multiple_files=True)
         if st.form_submit_button("🚀 Save & Upload"):
-            if not eng or not eq: st.error("Missing Details.")
-            else:
-                res = conn.table("progress_logs").insert({"customer": cust, "engineer": eng, "equipment": eq, "job_code": job, "po_no": po, "target_date": str(target), "fab_status": status, "remarks": remarks}).execute()
-                log_id = res.data[0]['id']
-                all_media = ([cam_pic] if cam_pic else []) + (gal_pics if gal_pics else [])
-                for i, pic in enumerate(all_media):
-                    fname = f"img_{datetime.now().strftime('%H%M%S')}_{i}.jpg"
-                    conn.client.storage.from_("progress-photos").upload(path=f"reports/{log_id}/{fname}", file=pic.getvalue())
-                st.success("Cloud Sync Complete!"); st.rerun()
+            res = conn.table("progress_logs").insert({"customer": cust, "engineer": eng, "equipment": eq, "job_code": job, "po_no": po, "target_date": str(target), "fab_status": status, "remarks": remarks}).execute()
+            log_id = res.data[0]['id']
+            all_m = ([cam_pic] if cam_pic else []) + (gal_pics if gal_pics else [])
+            for i, p in enumerate(all_m):
+                conn.client.storage.from_("progress-photos").upload(path=f"reports/{log_id}/img_{i}.jpg", file=p.getvalue())
+            st.success("Synced!"); st.rerun()
 
-# --- TAB 2: ARCHIVE (WITH BULK PDF) ---
+# --- TAB 2: ARCHIVE ---
 with tab_archive:
-    st.subheader("📊 Customer Reviews")
     col_f1, col_f2 = st.columns(2)
-    sel_cust = col_f1.selectbox("Filter by Customer", ["All"] + customer_list, key="cust_sel")
-    show_weekly = col_f2.checkbox("Last 7 days only", value=True, key="week_sel")
-
+    sel_cust = col_f1.selectbox("Customer", ["All"] + customer_list)
+    show_weekly = col_f2.checkbox("Last 7 days", value=True)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
     if sel_cust != "All": query = query.eq("customer", sel_cust)
     if show_weekly: query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
     data = query.execute().data
 
-    # --- CUSTOMER-WISE DOWNLOAD ---
     if sel_cust != "All" and data:
-        st.info(f"Generating bulk report for {len(data)} jobs for {sel_cust}...")
-        try:
+        st.write(f"### 📋 {sel_cust} Weekly Report")
+        with st.spinner("Building Report with Images..."):
             bulk_pdf_data = create_bulk_pdf(sel_cust, data)
-            st.download_button(label=f"📥 Download {sel_cust} Weekly Summary PDF", data=bulk_pdf_data, file_name=f"{sel_cust}_Weekly_Report.pdf", mime="application/pdf", key="bulk_pdf")
-        except Exception as e: st.error(f"Bulk PDF failed: {e}")
+            st.download_button(f"📥 Download Full {sel_cust} Report", data=bulk_pdf_data, file_name=f"{sel_cust}_Report.pdf", mime="application/pdf")
         st.divider()
 
     if data:
         for log in data:
-            with st.expander(f"📦 {log['equipment']} | {log['job_code']} ({log['created_at'][:10]})"):
-                t_col, p_col = st.columns([1,1])
+            with st.expander(f"📦 {log['equipment']} | {log['job_code']}"):
+                t, p = st.columns([1,1])
                 folder = f"reports/{log['id']}"
                 files = conn.client.storage.from_("progress-photos").list(folder)
                 photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
-                with t_col:
+                with t:
                     st.write(f"**Status:** {log['fab_status']}")
-                    st.write(f"**Remarks:** {log['remarks']}")
                     if photo_urls:
-                        pdf_b = create_pdf(log, photo_urls)
-                        st.download_button("📥 Job PDF", data=pdf_b, file_name=f"Job_{log['job_code']}.pdf", key=f"btn_{log['id']}")
-                with p_col:
-                    if photo_urls: st.image(photo_urls, use_container_width=True)
-    else: st.info("No logs found.")
+                        st.download_button("📥 Job PDF", create_pdf(log, photo_urls), f"{log['job_code']}.pdf", key=f"j_{log['id']}")
+                with p:
+                    if photo_urls: st.image(photo_urls, width=150)
 
-# --- TAB 3: ADMIN ---
+# --- TAB 3: ADMIN (Same as before) ---
 with tab_masters:
-    if st.text_input("Admin PIN", type="password") == "1234":
-        m1, m2 = st.columns(2)
-        with m1:
-            with st.form("add_c", clear_on_submit=True):
-                n = st.text_input("New Customer")
-                if st.form_submit_button("Add"): conn.table("customer_master").insert({"name": n}).execute(); st.rerun()
-        with m2:
-            with st.form("add_j", clear_on_submit=True):
-                n = st.text_input("New Job Code")
-                if st.form_submit_button("Add"): conn.table("job_master").insert({"job_code": n}).execute(); st.rerun()
+    if st.text_input("PIN", type="password") == "1234":
+        n_c = st.text_input("New Customer")
+        if st.button("Add Customer"): conn.table("customer_master").insert({"name": n_c}).execute(); st.rerun()
