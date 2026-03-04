@@ -7,11 +7,11 @@ import requests
 from io import BytesIO
 from PIL import Image
 
-# 1. INITIALIZE CONNECTION
+# 1. INITIALIZE CONNECTION & CONFIG
 st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- PDF GENERATOR (RE-ADDED PHOTO LOGIC) ---
+# --- PDF GENERATOR (PASSPORT SIZE + COMPRESSION) ---
 class ProgressPDF(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
@@ -40,8 +40,8 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
-
-        # Primary Info Table (ALL 8 HEADER FIELDS)
+        
+        # --- ALL HEADER FIELDS (8 FIELDS) ---
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
@@ -51,51 +51,55 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Disp. Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Disp.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
-        pdf.ln(4)
+        pdf.ln(5)
 
-        # Milestone Table (ALL 9 MILESTONES)
-        pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
-        pdf.cell(70, 7, " Milestone", 1, 0, "L", fill=True)
-        pdf.cell(40, 7, " Status", 1, 0, "L", fill=True)
-        pdf.cell(80, 7, " Remarks/Notes", 1, 1, "L", fill=True)
-
+        # --- ALL MILESTONE FIELDS (9 CATEGORIES = 18 FIELDS) ---
         ms_list = [
             ("Drawing Submission", 'draw_sub', 'draw_sub_note'), ("Drawing Approval", 'draw_app', 'draw_app_note'),
             ("RM Status", 'rm_status', 'rm_note'), ("Sub-deliveries", 'sub_del', 'sub_del_note'),
             ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing Status", 'buff_stat', 'buff_note'),
-            ("Testing", 'testing', 'test_note'), ("QC/Dispatch", 'qc_stat', 'qc_note'), ("FAT", 'fat_stat', 'fat_note')
+            ("Testing Status", 'testing', 'test_note'), ("QC Status", 'qc_stat', 'qc_note'), ("FAT Status", 'fat_stat', 'fat_note')
         ]
+        pdf.set_font("helvetica", "B", 9)
+        pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
+        pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
+        pdf.cell(80, 8, " Remarks", 1, 1, "L", fill=True)
+        
         pdf.set_font("helvetica", "", 8)
         for label, skey, nkey in ms_list:
-            pdf.cell(70, 6.5, f" {label}", 1)
-            pdf.cell(40, 6.5, f" {log.get(skey, 'N/A')}", 1)
-            pdf.cell(80, 6.5, f" {log.get(nkey, '')}", 1, 1)
+            pdf.cell(70, 7, f" {label}", 1)
+            pdf.cell(40, 7, f" {log.get(skey, 'N/A')}", 1)
+            pdf.cell(80, 7, f" {log.get(nkey, '')}", 1, 1)
 
-        # --- PDF PHOTO LOGIC (PASSPORT SIZE) ---
-        cur_job = log.get('job_code')
+        # --- PASSPORT SIZE PHOTO LOGIC (Target ~50KB) ---
+        current_job = log.get('job_code')
         try:
-            res = conn.client.storage.from_("project-photos").list()
-            job_files = [f['name'] for f in res if f['name'].startswith(cur_job)]
+            res = conn.client.storage.from_("progress-photos").list()
+            job_files = [f['name'] for f in res if f['name'].startswith(current_job)]
+            
             if job_files:
                 pdf.ln(5)
                 pdf.set_font("helvetica", "B", 9)
-                pdf.cell(0, 6, "SITE PROGRESS PHOTOS:", 0, 1, "L")
-                x_pos = 10
-                for f_name in job_files[:3]: # Limit 3 photos horizontally
-                    url = conn.client.storage.from_("project-photos").get_public_url(f_name)
+                pdf.cell(0, 7, f"SITE PHOTOS - {current_job}", 0, 1, "L")
+                
+                x, y = 10, pdf.get_y() + 2
+                for idx, f_name in enumerate(job_files[:4]): # Max 4 per page
+                    url = conn.client.storage.from_("progress-photos").get_public_url(f_name)
                     img_data = requests.get(url).content
                     img = Image.open(BytesIO(img_data))
                     if img.mode != 'RGB': img = img.convert('RGB')
-                    img.thumbnail((300, 400))
-                    img_io = BytesIO()
-                    img.save(img_io, format='JPEG', quality=70) # Target 50-60KB
-                    pdf.image(img_io, x_pos, pdf.get_y() + 2, 40, 50) # Passport Size
-                    x_pos += 45
-                pdf.set_y(pdf.get_y() + 55) # Move cursor below photos
+                    
+                    # Passport scale & high compression
+                    img.thumbnail((350, 450)) 
+                    buf = BytesIO()
+                    img.save(buf, format='JPEG', quality=70) # Quality 70 = approx 50KB
+                    
+                    row, col = idx // 2, idx % 2
+                    pdf.image(buf, x + (col * 40), y + (row * 50), 35, 45) # 35x45mm Passport size
         except: pass
     return bytes(pdf.output())
 
-# --- DATA HELPERS ---
+# --- DATA MASTERS ---
 @st.cache_data(ttl=5)
 def get_masters():
     try:
@@ -107,35 +111,38 @@ def get_masters():
 c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
-# --- TAB 1: ENTRY ---
+# --- TAB 1: FORM (24+ FIELDS) ---
 with t1:
-    st.markdown("### 📸 Job-wise Photos")
-    job_photos = st.file_uploader("Upload Fabrication Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+    st.markdown("### 📸 Photo Uploads")
+    job_photos = st.file_uploader("Upload Fabrication Photos", type=['jpg','png','jpeg'], accept_multiple_files=True)
+    
     with st.form("main_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        cust, job, eq = col1.selectbox("Customer", c_list), col2.selectbox("Job Code", j_list), col3.text_input("Equipment")
-        col4, col5, col6 = st.columns(3)
-        po_n, po_d, eng = col4.text_input("PO No."), col5.date_input("PO Date"), col6.text_input("Engineer")
-        col7, col8 = st.columns(2)
-        po_disp, rev_del = col7.date_input("PO Disp. Date"), col8.date_input("Revised Dispatch Date")
+        c1, c2, c3 = st.columns(3)
+        cust, job, eq = c1.selectbox("Customer", c_list), c2.selectbox("Job Code", j_list), c3.text_input("Equipment")
+        c4, c5, c6 = st.columns(3)
+        po_n, po_d, eng = c4.text_input("PO No."), c5.date_input("PO Date"), c6.text_input("Engineer")
+        c7, c8 = st.columns(2)
+        po_disp, rev_del = c7.date_input("PO Disp. Date"), c8.date_input("Revised Dispatch Date")
 
-        def custom_row(label, opts, skey, nkey):
-            c1, c2 = st.columns([1, 2])
-            s = c1.selectbox(label, opts, key=skey); n = c2.text_input(f"Remarks for {label}", key=nkey)
+        st.markdown("---")
+        def row_ui(label, opts, skey, nkey):
+            col_a, col_b = st.columns([1, 2])
+            s = col_a.selectbox(label, opts, key=skey)
+            n = col_b.text_input(f"Remarks for {label}", key=nkey)
             return s, n
 
         opts = ["Pending", "In-Progress", "Hold", "Completed"]
-        d_s, d_n = custom_row("Drawing Submission", ["In-Progress", "Submitted"], "s1", "n1")
-        da_s, da_n = custom_row("Drawing Approval", ["Pending", "Approved"], "s2", "n2")
-        rm_s, rm_n = custom_row("RM Status", opts, "s3", "n3")
-        sd_s, sd_n = custom_row("Sub-deliveries", opts, "s4", "n4")
-        fb_s, fb_n = custom_row("Fabrication", opts, "s5", "n5")
-        bf_s, bf_n = custom_row("Buffing", opts, "s6", "n6")
-        ts_s, ts_n = custom_row("Testing", opts, "s7", "n7")
-        qc_s, qc_n = custom_row("QC/Dispatch", opts, "s8", "n8")
-        fat_s, fat_n = custom_row("FAT", opts, "s9", "n9")
+        d_s, d_n = row_ui("Drawing Submission", ["In-Progress", "Submitted"], "s1", "n1")
+        da_s, da_n = row_ui("Drawing Approval", ["Pending", "Approved"], "s2", "n2")
+        rm_s, rm_n = row_ui("RM Status", opts, "s3", "n3")
+        sd_s, sd_n = row_ui("Sub-deliveries", opts, "s4", "n4")
+        fb_s, fb_n = row_ui("Fabrication", opts, "s5", "n5")
+        bf_s, bf_n = row_ui("Buffing/Finishing", opts, "s6", "n6")
+        ts_s, ts_n = row_ui("Testing Status", opts, "s7", "n7")
+        qc_s, qc_n = row_ui("QC Status", opts, "s8", "n8")
+        fat_s, fat_n = row_ui("FAT Status", opts, "s9", "n9")
 
-        if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+        if st.form_submit_button("🚀 Sync All Fields + Photos"):
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -144,52 +151,46 @@ with t1:
                 "fab_status": fb_s, "remarks": fb_n, "buff_stat": bf_s, "buff_note": bf_n,
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
+            
             if job_photos:
                 for photo in job_photos:
-                    path = f"{job}_{photo.name}"
-                    conn.client.storage.from_("project-photos").upload(path=path, file=photo.getvalue(), file_options={"upsert": "true"})
+                    path = f"{job}_{photo.name.replace(' ', '_')}"
+                    conn.client.storage.from_("progress-photos").upload(path=path, file=photo.getvalue(), file_options={"upsert": "true"})
             st.success("Synchronized!"); st.rerun()
 
-# --- TAB 2: ARCHIVE ---
+# --- TAB 2: ARCHIVE (JOB-WISE DISPLAY) ---
 with t2:
-    sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
+    sel_cust = st.selectbox("Filter by Customer", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
     if sel_cust != "All": query = query.eq("customer", sel_cust)
     data = query.execute().data
     
     if data:
         if sel_cust != "All":
-            st.download_button("📥 Download Official PDF", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
+            st.download_button("📥 Download PDF (Passport Photos Included)", create_bulk_pdf(sel_cust, data), f"BG_{sel_cust}.pdf")
         
         for log in data:
             cur_job = log.get('job_code')
-            with st.expander(f"📦 Job: {cur_job} | Eq: {log.get('equipment')}"):
-                # --- JOBWISE PHOTO DISPLAY (ARCHIVE VIEW) ---
+            with st.expander(f"📦 Job: {cur_job} | {log.get('equipment')}"):
+                # --- SHOW PHOTOS IN WEB VIEW ---
                 try:
-                    res = conn.client.storage.from_("project-photos").list()
+                    res = conn.client.storage.from_("progress-photos").list()
                     job_files = [f['name'] for f in res if f['name'].startswith(cur_job)]
                     if job_files:
-                        st.markdown("#### 📷 Site Photos")
-                        cols = st.columns(len(job_files))
-                        for i, f_name in enumerate(job_files):
-                            url = conn.client.storage.from_("project-photos").get_public_url(f_name)
-                            cols[i].image(url, use_container_width=True)
+                        p_cols = st.columns(4)
+                        for idx, f_name in enumerate(job_files):
+                            url = conn.client.storage.from_("progress-photos").get_public_url(f_name)
+                            p_cols[idx % 4].image(url, use_container_width=True)
                 except: pass
-                
-                # Show key milestones in table
-                st.table([
-                    {"Milestone": "Drawing", "Status": log.get('draw_sub')},
-                    {"Milestone": "Fabrication", "Status": log.get('fab_status')},
-                    {"Milestone": "QC", "Status": log.get('qc_stat')}
-                ])
+                st.table([{"Milestone": "Fabrication", "Status": log.get('fab_status'), "Remarks": log.get('remarks')}])
 
 # --- TAB 3: MASTERS ---
 with t3:
     if st.text_input("Admin PIN", type="password") == "1234":
-        c1, c2 = st.columns(2)
-        with c1:
-            nc = st.text_input("Add New Customer")
-            if st.button("Save C"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
-        with c2:
-            nj = st.text_input("Add New Job Code")
-            if st.button("Save J"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
+        c_add, j_add = st.columns(2)
+        with c_add:
+            nc = st.text_input("New Customer")
+            if st.button("Add C"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
+        with j_add:
+            nj = st.text_input("New Job Code")
+            if st.button("Add J"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
