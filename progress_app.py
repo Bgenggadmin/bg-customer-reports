@@ -8,6 +8,7 @@ import os
 st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
+# --- PDF LOGIC (UNTOUCHED) ---
 class ProgressPDF(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
@@ -85,6 +86,7 @@ with t1:
         rev_del = col8.date_input("Revised Dispatch Date")
 
         st.markdown("---")
+        # DROPDOWNS (UNTOUCHED)
         draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
         draw_app_opts = ["Pending", "In-Progress", "Approved"]
         rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
@@ -125,7 +127,7 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # 2. Storage Upload (NAME MATCHED TO: progress-photos)
+            # 2. Storage Upload (Target: progress-photos)
             if job_photos:
                 for photo in job_photos:
                     clean_name = photo.name.replace(" ", "_")
@@ -155,16 +157,24 @@ with t2:
         for log in data:
             current_job = log.get('job_code')
             with st.expander(f"📦 Job: {current_job} | Eq: {log.get('equipment')}"):
-                # Show Photos from progress-photos bucket
+                
+                # --- PHOTO LISTING LOGIC ---
                 try:
-                    files = conn.client.storage.from_("progress-photos").list()
-                    job_files = [f['name'] for f in files if f['name'].startswith(current_job)]
+                    # Get all files in the bucket
+                    res = conn.client.storage.from_("progress-photos").list()
+                    # Filter for files that start with THIS job code
+                    job_files = [f['name'] for f in res if f['name'].startswith(f"{current_job}_")]
+                    
                     if job_files:
-                        cols = st.columns(len(job_files))
+                        st.markdown("#### 📷 Site Photos")
+                        cols = st.columns(min(len(job_files), 4))
                         for idx, f_name in enumerate(job_files):
                             url = conn.client.storage.from_("progress-photos").get_public_url(f_name)
-                            cols[idx].image(url, use_container_width=True)
-                except: pass
+                            cols[idx % 4].image(url, use_container_width=True)
+                    else:
+                        st.info("No photos uploaded for this job yet.")
+                except Exception as e:
+                    st.error(f"Could not load photos: {e}")
                 
                 st.table([
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
