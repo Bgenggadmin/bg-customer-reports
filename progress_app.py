@@ -10,7 +10,7 @@ from PIL import Image
 st.set_page_config(page_title="B&G Hub Master", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- PDF GENERATOR (ALL 24+ FIELDS INCLUDED) ---
+# --- PDF GENERATOR (VERIFIED PHOTO INTEGRATION) ---
 class ProgressPDF(FPDF):
     def header(self):
         self.set_font("helvetica", "B", 14)
@@ -27,7 +27,7 @@ def create_report_pdf(logs_list):
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(0, 8, f" JOB CODE: {log.get('job_code')} | DATE: {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         
-        # --- HEADER (8 FIELDS) ---
+        # HEADER (8 FIELDS)
         pdf.set_font("helvetica", "B", 8)
         h_data = [
             ("Customer", log.get('customer')), ("Equipment", log.get('equipment')),
@@ -39,7 +39,7 @@ def create_report_pdf(logs_list):
             pdf.cell(30, 7, h_data[i][0], 1, 0, 'L', True); pdf.cell(65, 7, str(h_data[i][1]), 1, 0)
             pdf.cell(30, 7, h_data[i+1][0], 1, 0, 'L', True); pdf.cell(65, 7, str(h_data[i+1][1]), 1, 1)
 
-        # --- MILESTONES (18 FIELDS) ---
+        # MILESTONES (18 FIELDS)
         pdf.ln(3)
         pdf.set_font("helvetica", "B", 8)
         pdf.cell(60, 7, " Milestone", 1, 0, 'L', True); pdf.cell(35, 7, " Status", 1, 0, 'L', True); pdf.cell(95, 7, " Remarks", 1, 1, 'L', True)
@@ -53,7 +53,7 @@ def create_report_pdf(logs_list):
         for label, skey, nkey in ms:
             pdf.cell(60, 6, label, 1); pdf.cell(35, 6, str(log.get(skey, '-')), 1); pdf.cell(95, 6, str(log.get(nkey, '-')), 1, 1)
 
-        # --- PHOTOS IN PDF ---
+        # PHOTOS IN PDF (Passport Size)
         entry_id = str(log.get('id'))
         try:
             res = conn.client.storage.from_("progress-photos").list(path=entry_id)
@@ -61,7 +61,8 @@ def create_report_pdf(logs_list):
                 pdf.ln(5); y_p = pdf.get_y()
                 for idx, f in enumerate(res[:4]):
                     u = conn.client.storage.from_("progress-photos").get_public_url(f"{entry_id}/{f['name']}")
-                    img = Image.open(BytesIO(requests.get(u).content)).convert('RGB')
+                    img_data = requests.get(u).content
+                    img = Image.open(BytesIO(img_data)).convert('RGB')
                     img.thumbnail((300, 400)); buf = BytesIO(); img.save(buf, format='JPEG', quality=50)
                     pdf.image(buf, 10 + ((idx % 4) * 48), y_p, 40, 45)
         except: pass
@@ -73,7 +74,7 @@ jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code"
 
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
-# --- TAB 1: NEW ENTRY (MULTI-PHOTO & UPSERT FIX) ---
+# --- TAB 1: NEW ENTRY ---
 with t1:
     with st.form("entry_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -83,10 +84,8 @@ with t1:
         c7, c8 = st.columns(2)
         p_del, r_del = c7.date_input("PO Delivery"), c8.date_input("Revised Dispatch")
         
-        # All 9 Milestone Rows
         def m_row(label, sid, nid, opts=["Pending", "In-Progress", "Hold", "Completed"]):
-            col_a, col_b = st.columns([1,2])
-            return col_a.selectbox(label, opts, key=sid), col_b.text_input(f"Remarks: {label}", key=nid)
+            ca, cb = st.columns([1,2]); return ca.selectbox(label, opts, key=sid), cb.text_input(f"Remarks: {label}", key=nid)
 
         s1, n1 = m_row("Drawing Submission", "s1", "n1", ["In-Progress", "Submitted"])
         s2, n2 = m_row("Drawing Approval", "s2", "n2", ["Pending", "Approved"])
@@ -116,9 +115,9 @@ with t1:
                     conn.client.storage.from_("progress-photos").upload(
                         path=f"{new_id}/{p.name}", file=p.getvalue(), file_options={"upsert": "true"}
                     )
-            st.success("Entry Saved!"); st.rerun()
+            st.success(f"Job {job} Saved with ID {new_id}!"); st.rerun()
 
-# --- TAB 2: ARCHIVE (PDF & PHOTO GALLERY) ---
+# --- TAB 2: ARCHIVE (VERIFIED PHOTO FETCH) ---
 with t2:
     sel_cust = st.selectbox("Filter Customer", ["All"] + customers)
     query = conn.table("progress_logs").select("*").order("id", desc=True)
@@ -127,7 +126,7 @@ with t2:
     
     if data:
         if sel_cust != "All":
-            st.download_button(f"📥 Download {sel_cust} PDF", create_report_pdf(data), f"Report_{sel_cust}.pdf")
+            st.download_button(f"📥 Download {sel_cust} PDF", create_report_pdf(data), f"B&G_Report.pdf")
         
         for log in data:
             c_h, c_d = st.columns([6,1])
@@ -139,22 +138,28 @@ with t2:
                 except: pass
                 conn.table("progress_logs").delete().eq("id", log['id']).execute(); st.rerun()
             
-            with st.expander("Show Detailed Photos & Data"):
-                # Multi-Photo Gallery
-                p_list = conn.client.storage.from_("progress-photos").list(path=str(log['id']))
+            with st.expander("Show Details & Photos"):
+                # PHOTO GALLERY FETCH
+                eid = str(log['id'])
+                p_list = conn.client.storage.from_("progress-photos").list(path=eid)
                 if p_list:
                     cols = st.columns(5)
                     for i, p in enumerate(p_list):
-                        url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}/{p['name']}")
-                        cols[i % 5].image(url, use_container_width=True)
-                st.table({k: [v] for k, v in log.items()})
+                        # Constructing the path carefully: FOLDER/FILENAME
+                        p_path = f"{eid}/{p['name']}"
+                        u = conn.client.storage.from_("progress-photos").get_public_url(p_path)
+                        cols[i % 5].image(u, use_container_width=True)
+                else:
+                    st.warning("No photos found in Storage for this ID.")
+                
+                st.table({k: [v] for k, v in log.items() if v})
 
 # --- TAB 3: MASTERS ---
 with t3:
-    col_ma, col_mb = st.columns(2)
-    with col_ma:
+    ma, mb = st.columns(2)
+    with ma:
         nc = st.text_input("New Customer")
         if st.button("Add Cust"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
-    with col_mb:
+    with mb:
         nj = st.text_input("New Job Code")
         if st.button("Add Job"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
