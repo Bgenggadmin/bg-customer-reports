@@ -138,9 +138,9 @@ with t1:
         qc_s, qc_n = custom_row("QC/Dispatch Status", qc_opts, "s8", "n8")
         fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
-        if st.form_submit_button("🚀 Sync All Fields to Cloud"):
-            # 1. Insert Record
-            res = conn.table("progress_logs").insert({
+       if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+            # 1. Insert Record into Database
+            conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
                 "draw_sub": d_s, "draw_sub_note": d_n, "draw_app": da_s, "draw_app_note": da_n,
@@ -150,13 +150,22 @@ with t1:
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # 2. Upload Photos (Optional logic for Supabase Storage)
+            # 2. Upload Photos using the correct client attribute
             if job_photos:
                 for photo in job_photos:
-                    path = f"project-photos/{job}_{photo.name}"
-                    conn.storage.from_("project-photos").upload(path, photo.getvalue())
+                    # Access storage via conn.client
+                    path = f"{job}_{photo.name}"
+                    try:
+                        conn.client.storage.from_("project-photos").upload(
+                            path=path,
+                            file=photo.getvalue(),
+                            file_options={"content-type": photo.type}
+                        )
+                    except Exception as e:
+                        st.error(f"Error uploading {photo.name}: {e}")
 
-            st.success("24 Fields + Photos Synchronized Successfully!"); st.rerun()
+            st.success("24 Fields + Photos Synchronized Successfully!")
+            st.rerun()
 
 with t2:
     sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
