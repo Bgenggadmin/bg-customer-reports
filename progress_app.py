@@ -2,8 +2,6 @@ import streamlit as st
 from st_supabase_connection import SupabaseConnection
 from datetime import datetime
 from fpdf import FPDF
-import requests
-from io import BytesIO
 import os
 
 # 1. INITIALIZE CONNECTION
@@ -93,9 +91,9 @@ c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
-    # Moved file upload outside of form for better state handling in Streamlit
-    st.markdown("### 📸 Project Photos (Optional)")
-    uploaded_files = st.file_uploader("Upload site/fabrication photos", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+    # 📸 PHOTO OPTION ADDED HERE
+    st.markdown("### 📸 Job-wise Photos")
+    job_photos = st.file_uploader("Upload 2-3 Fabrication/Site Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
 
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -114,7 +112,7 @@ with t1:
 
         st.markdown("### 📊 Unique Milestone Updates")
         
-        # --- DROPDOWN OPTIONS ---
+        # --- DROPDOWN LISTS ---
         draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
         draw_app_opts = ["Pending", "In-Progress", "Approved"]
         rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
@@ -141,8 +139,8 @@ with t1:
         fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
-            # Handle Database Insert
-            conn.table("progress_logs").insert({
+            # 1. Insert Record
+            res = conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
                 "draw_sub": d_s, "draw_sub_note": d_n, "draw_app": da_s, "draw_app_note": da_n,
@@ -151,6 +149,13 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n,
                 "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
+            
+            # 2. Upload Photos (Optional logic for Supabase Storage)
+            if job_photos:
+                for photo in job_photos:
+                    path = f"project-photos/{job}_{photo.name}"
+                    conn.storage.from_("project-photos").upload(path, photo.getvalue())
+
             st.success("24 Fields + Photos Synchronized Successfully!"); st.rerun()
 
 with t2:
@@ -167,8 +172,6 @@ with t2:
             with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
                 st.table([
                     {"Milestone": "Drawing Submission", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
-                    {"Milestone": "Drawing Approval", "Status": log.get('draw_app'), "Note": log.get('draw_app_note')},
-                    {"Milestone": "RM Status", "Status": log.get('rm_status'), "Note": log.get('rm_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
                     {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
                 ])
