@@ -136,5 +136,53 @@ with tab2:
                     st.rerun()
 
 with tab3:
-    st.header("Masters Management")
-    # ... logic to add/remove customers and jobs ...
+    st.header("🛠️ Master Data Management")
+    st.info("Add or remove Customers and Job Codes here. These will appear in your 'New Entry' dropdowns.")
+    
+    col_cust, col_job = st.columns(2)
+    
+    # --- CUSTOMER SECTION ---
+    with col_cust:
+        st.subheader("👥 Customers")
+        with st.container(border=True):
+            new_cust = st.text_input("New Customer Name", placeholder="e.g. Reliance Industries")
+            if st.button("➕ Add Customer", use_container_width=True):
+                if new_cust:
+                    conn.table("customer_master").insert({"name": new_cust}).execute()
+                    st.success(f"Added {new_cust}")
+                    st.rerun()
+                else:
+                    st.error("Enter a name first")
+            
+        st.write("**Current Customers:**")
+        # Fetch fresh list to display with delete buttons
+        c_data = conn.table("customer_master").select("*").execute().data
+        for c in sorted(c_data, key=lambda x: x['name']):
+            c_row1, c_row2 = st.columns([3, 1])
+            c_row1.text(f"• {c['name']}")
+            if c_row2.button("🗑️", key=f"del_c_{c['id']}"):
+                conn.table("customer_master").delete().eq("id", c['id']).execute()
+                st.rerun()
+
+    # --- JOB CODE SECTION ---
+    with col_job:
+        st.subheader("🔢 Job Codes")
+        with st.container(border=True):
+            new_job = st.text_input("New Job Code", placeholder="e.g. BG-2024-001")
+            if st.button("➕ Add Job Code", use_container_width=True):
+                if new_job:
+                    conn.table("job_master").insert({"job_code": new_job}).execute()
+                    st.success(f"Added {new_job}")
+                    st.rerun()
+                else:
+                    st.error("Enter a code first")
+            
+        st.write("**Current Job Codes:**")
+        # Fetch fresh list to display with delete buttons
+        j_data = conn.table("job_master").select("*").execute().data
+        for j in sorted(j_data, key=lambda x: x['job_code']):
+            j_row1, j_row2 = st.columns([3, 1])
+            j_row1.text(f"• {j['job_code']}")
+            if j_row2.button("🗑️", key=f"del_j_{j['id']}"):
+                conn.table("job_master").delete().eq("id", j['id']).execute()
+                st.rerun()
