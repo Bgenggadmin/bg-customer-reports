@@ -39,7 +39,7 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
 
-        # Primary Info Table - All 8 fields included
+        # Primary Info Table
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
@@ -54,7 +54,7 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         pdf.ln(5)
 
-        # Milestone Table - All 9 items from PDF included
+        # Milestone Table
         pdf.set_font("helvetica", "B", 9); pdf.set_fill_color(220, 230, 241)
         pdf.cell(70, 8, " Milestone", 1, 0, "L", fill=True)
         pdf.cell(40, 8, " Status", 1, 0, "L", fill=True)
@@ -110,12 +110,15 @@ with t1:
 
         st.markdown("### 📊 Unique Milestone Updates")
         
-        # DEFINING UNIQUE DROPDOWN LISTS PER CATEGORY
-        draw_opts = ["In-Progress", "Submitted", "Revised", "Approved", "N/A"]
-        rm_opts = ["In-Progress", "Ordered", "Partially Received", "Received", "N/A"]
-        fab_opts = ["In-Progress", "Shell Welding", "Jacket Welding", "Structure", "Completed"]
-        test_opts = ["In-Progress", "Hydro-Test", "Pneumatic-Test", "Completed"]
-        qc_opts = ["In-Progress", "QC Cleared", "Ready for Dispatch", "Dispatched"]
+        # --- MODIFIED DROP DOWN LISTS ---
+        draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
+        draw_app_opts = ["Pending", "In-Progress", "Approved"]
+        rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
+        fab_opts = ["Pending", "In-Progress", "Hold", "Completed"]
+        buff_opts = ["Hold", "Pending", "In-Progress", "Completed"]
+        test_opts = ["Pending", "In-Progress", "Completed"]
+        fat_opts = ["Pending", "Hold", "Scheduled", "In-Progress", "Completed"]
+        qc_opts = ["Hold", "Pending", "In-Progress", "Completed"]
         
         def custom_row(label, opts, skey, nkey):
             c1, c2 = st.columns([1, 2])
@@ -123,15 +126,15 @@ with t1:
             n = c2.text_input(f"Remarks for {label}", key=nkey)
             return s, n
 
-        d_s, d_n = custom_row("Drawing Submission", draw_opts, "s1", "n1")
-        da_s, da_n = custom_row("Drawing Approval", ["In-Progress", "Approved", "Conditional"], "s2", "n2")
+        d_s, d_n = custom_row("Drawing Submission", draw_sub_opts, "s1", "n1")
+        da_s, da_n = custom_row("Drawing Approval", draw_app_opts, "s2", "n2")
         rm_s, rm_n = custom_row("RM Status", rm_opts, "s3", "n3")
-        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4")
+        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4") # Using Broughtouts logic
         fb_s, fb_n = custom_row("Fabrication Status", fab_opts, "s5", "n5")
-        bf_s, bf_n = custom_row("Buffing/Finishing Status", ["In-Progress", "Internal", "Mirror", "Completed"], "s6", "n6")
+        bf_s, bf_n = custom_row("Buffing/Finishing Status", buff_opts, "s6", "n6")
         ts_s, ts_n = custom_row("Testing", test_opts, "s7", "n7")
         qc_s, qc_n = custom_row("QC/Dispatch Status", qc_opts, "s8", "n8")
-        fat_s, fat_n = custom_row("FAT", ["In-Progress", "Scheduled", "Completed"], "s9", "n9")
+        fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
             conn.table("progress_logs").insert({
@@ -158,7 +161,8 @@ with t2:
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
                 st.table([
-                    {"Milestone": "Drawing", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
+                    {"Milestone": "Drawing Submission", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
+                    {"Milestone": "Drawing Approval", "Status": log.get('draw_app'), "Note": log.get('draw_app_note')},
                     {"Milestone": "RM Status", "Status": log.get('rm_status'), "Note": log.get('rm_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
                     {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
