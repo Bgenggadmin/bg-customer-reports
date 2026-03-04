@@ -84,38 +84,28 @@ with t1:
         po_disp = col7.date_input("PO Disp. Date")
         rev_del = col8.date_input("Revised Dispatch Date")
 
-        st.markdown("---")
-        draw_sub_opts = ["In-Progress", "Under Revision", "Submitted"]
-        draw_app_opts = ["Pending", "In-Progress", "Approved"]
-        rm_opts = ["Pending", "Hold", "In-Progress", "Partially received", "Received"]
-        fab_opts = ["Pending", "In-Progress", "Hold", "Completed"]
-        buff_opts = ["Hold", "Pending", "In-Progress", "Completed"]
-        test_opts = ["Pending", "In-Progress", "Completed"]
-        fat_opts = ["Pending", "Hold", "Scheduled", "In-Progress", "Completed"]
-        qc_opts = ["Hold", "Pending", "In-Progress", "Completed"]
-        
+        st.markdown("### 📊 Unique Milestone Updates")
         def custom_row(label, opts, skey, nkey):
             c1, c2 = st.columns([1, 2])
             s = c1.selectbox(label, opts, key=skey)
             n = c2.text_input(f"Remarks for {label}", key=nkey)
             return s, n
 
-        d_s, d_n = custom_row("Drawing Submission", draw_sub_opts, "s1", "n1")
-        da_s, da_n = custom_row("Drawing Approval", draw_app_opts, "s2", "n2")
-        rm_s, rm_n = custom_row("RM Status", rm_opts, "s3", "n3")
-        sd_s, sd_n = custom_row("Sub-deliveries Status", rm_opts, "s4", "n4")
-        fb_s, fb_n = custom_row("Fabrication Status", fab_opts, "s5", "n5")
-        bf_s, bf_n = custom_row("Buffing/Finishing Status", buff_opts, "s6", "n6")
-        ts_s, ts_n = custom_row("Testing", test_opts, "s7", "n7")
-        qc_s, qc_n = custom_row("QC/Dispatch Status", qc_opts, "s8", "n8")
-        fat_s, fat_n = custom_row("FAT", fat_opts, "s9", "n9")
+        d_s, d_n = custom_row("Drawing Submission", ["In-Progress", "Under Revision", "Submitted"], "s1", "n1")
+        da_s, da_n = custom_row("Drawing Approval", ["Pending", "In-Progress", "Approved"], "s2", "n2")
+        rm_s, rm_n = custom_row("RM Status", ["Pending", "Hold", "In-Progress", "Partially received", "Received"], "s3", "n3")
+        sd_s, sd_n = custom_row("Sub-deliveries Status", ["Pending", "Hold", "In-Progress", "Partially received", "Received"], "s4", "n4")
+        fb_s, fb_n = custom_row("Fabrication Status", ["Pending", "In-Progress", "Hold", "Completed"], "s5", "n5")
+        bf_s, bf_n = custom_row("Buffing/Finishing Status", ["Hold", "Pending", "In-Progress", "Completed"], "s6", "n6")
+        ts_s, ts_n = custom_row("Testing", ["Pending", "In-Progress", "Completed"], "s7", "n7")
+        qc_s, qc_n = custom_row("QC/Dispatch Status", ["Hold", "Pending", "In-Progress", "Completed"], "s8", "n8")
+        fat_s, fat_n = custom_row("FAT", ["Pending", "Hold", "Scheduled", "In-Progress", "Completed"], "s9", "n9")
 
         st.markdown("---")
-        st.markdown("### 📸 Job-wise Photos")
-        job_photos = st.file_uploader("Upload 2-3 Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
+        st.markdown("### 📸 Take Progress Photo")
+        cam_photo = st.camera_input("Capture live image from site")
 
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
-            # 1. Database Entry
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -125,18 +115,16 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
-            # 2. Storage Upload
-            if job_photos:
-                for photo in job_photos:
-                    path = f"{job}_{photo.name}"
-                    try:
-                        conn.client.storage.from_("project-photos").upload(
-                            path=path, file=photo.getvalue(),
-                            file_options={"content-type": photo.type, "x-upsert": "true"}
-                        )
-                    except: pass
+            if cam_photo:
+                path = f"{job}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                try:
+                    conn.client.storage.from_("project-photos").upload(
+                        path=path, file=cam_photo.getvalue(),
+                        file_options={"content-type": "image/jpeg", "x-upsert": "true"}
+                    )
+                except: pass
 
-            st.success("All Fields + Photos Synchronized!")
+            st.success("All Fields + Photo Synchronized Successfully!")
             st.rerun()
 
 with t2:
@@ -151,18 +139,16 @@ with t2:
         
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
-                # View Photos
                 try:
                     files = conn.client.storage.from_("project-photos").list()
-                    job_files = [f['name'] for f in files if f['name'].startswith(log.get('job_code'))]
+                    job_files = sorted([f['name'] for f in files if f['name'].startswith(log.get('job_code'))], reverse=True)
                     if job_files:
-                        cols = st.columns(len(job_files))
-                        for idx, f_name in enumerate(job_files):
-                            url = conn.client.storage.from_("project-photos").get_public_url(f_name)
-                            cols[idx].image(url, use_container_width=True)
+                        url = conn.client.storage.from_("project-photos").get_public_url(job_files[0])
+                        st.image(url, caption="Latest Captured Photo", width=500)
                 except: pass
                 
                 st.table([
+                    {"Milestone": "Drawing Submission", "Status": log.get('draw_sub'), "Note": log.get('draw_sub_note')},
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
                     {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
                 ])
@@ -171,8 +157,8 @@ with t3:
     if st.text_input("Admin PIN", type="password") == "1234":
         c1, c2 = st.columns(2)
         with c1:
-            nc = st.text_input("Add Customer")
-            if st.button("Save C"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
+            nc = st.text_input("Add New Customer")
+            if st.button("Save Customer"): conn.table("customer_master").insert({"name": nc}).execute(); st.rerun()
         with c2:
-            nj = st.text_input("Add Job")
-            if st.button("Save J"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
+            nj = st.text_input("Add New Job Code")
+            if st.button("Save Job Code"): conn.table("job_master").insert({"job_code": nj}).execute(); st.rerun()
