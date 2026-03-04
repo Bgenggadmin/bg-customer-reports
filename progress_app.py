@@ -24,7 +24,29 @@ MILESTONE_MAP = [
     ("QC Status", "qc_stat", "qc_note"),
     ("FAT Status", "fat_stat", "fat_note")
 ]
+import streamlit as st
+from st_supabase_connection import SupabaseConnection
+# ... other imports ...
 
+# 1. SETUP
+st.set_page_config(...)
+conn = st.connection(...)
+
+# 2. THE MASTER MAPPINGS
+HEADER_FIELDS = [...]
+MILESTONE_MAP = [...]
+
+# ---------------------------------------------------------
+# PASTE THE "UPDATED PDF GENERATOR" CODE HERE (Approx Line 25)
+# ---------------------------------------------------------
+def generate_pdf(logs):
+    # ... the code I gave you ...
+    return bytes(pdf.output())
+
+# ---------------------------------------------------------
+# THEN START YOUR TABS
+# ---------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 # --- DATA FETCHING ---
 customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
 jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
