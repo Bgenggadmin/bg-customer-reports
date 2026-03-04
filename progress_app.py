@@ -69,6 +69,10 @@ c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with t1:
+    # --- CAMERA SECTION (Moved outside form for mobile compatibility) ---
+    st.markdown("### 📸 Site Photos")
+    job_photos = st.file_uploader("Capture or Upload Photos", type=['jpg', 'jpeg', 'png'], accept_multiple_files=True, label_visibility="visible")
+
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         cust = col1.selectbox("Customer", c_list)
@@ -101,12 +105,8 @@ with t1:
         qc_s, qc_n = custom_row("QC/Dispatch Status", ["Hold", "Pending", "In-Progress", "Completed"], "s8", "n8")
         fat_s, fat_n = custom_row("FAT", ["Pending", "Hold", "Scheduled", "In-Progress", "Completed"], "s9", "n9")
 
-        st.markdown("---")
-        st.markdown("### 📸 Add Photos (Camera)")
-        # This will trigger camera on mobile
-        job_photos = st.file_uploader("Capture or Upload Photos", type=['jpg', 'png', 'jpeg'], accept_multiple_files=True)
-
         if st.form_submit_button("🚀 Sync All Fields to Cloud"):
+            # 1. Database Entry
             conn.table("progress_logs").insert({
                 "customer": cust, "job_code": job, "equipment": eq, "po_no": po_n, "po_date": str(po_d),
                 "engineer": eng, "po_delivery_date": str(po_disp), "exp_dispatch_date": str(rev_del),
@@ -116,6 +116,7 @@ with t1:
                 "testing": ts_s, "test_note": ts_n, "qc_stat": qc_s, "qc_note": qc_n, "fat_stat": fat_s, "fat_note": fat_n
             }).execute()
             
+            # 2. Storage Upload (Using correct client path)
             if job_photos:
                 for photo in job_photos:
                     safe_name = f"{job}_{photo.name}".replace(" ", "_")
@@ -126,7 +127,7 @@ with t1:
                             file_options={"content-type": photo.type, "x-upsert": "true"}
                         )
                     except Exception as e:
-                        st.error(f"Upload failed: {e}")
+                        st.error(f"Storage Error: {e}")
 
             st.success("Synchronized Successfully!")
             st.rerun()
@@ -143,6 +144,7 @@ with t2:
         
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code')} | Eq: {log.get('equipment')}"):
+                # View Photos logic
                 try:
                     all_files = conn.client.storage.from_("project-photos").list()
                     relevant = [f['name'] for f in all_files if f['name'].startswith(log.get('job_code'))]
