@@ -14,9 +14,11 @@ conn = st.connection("supabase", type=SupabaseConnection)
 # --- PDF GENERATION CLASS ---
 class ProgressPDF(FPDF):
     def header(self):
-        # Add Logo if exists in the GitHub repo
-        if os.path.exists("logo.png"):
-            self.image("logo.png", 10, 8, 30)
+        try:
+            if os.path.exists("logo.png"):
+                self.image("logo.png", 10, 8, 30)
+        except:
+            pass 
         self.set_font("helvetica", "B", 15)
         self.cell(80)
         self.cell(30, 10, "PROGRESS REPORT", 0, 0, "C")
@@ -43,7 +45,7 @@ def create_pdf(log_data, photo_urls):
     pdf.set_font("helvetica", "B", 10)
     pdf.cell(0, 8, "Work Progress Remarks:", ln=True)
     pdf.set_font("helvetica", "", 10)
-    pdf.multi_cell(0, 6, log_data['remarks'])
+    pdf.multi_cell(0, 6, log_data['remarks'] if log_data['remarks'] else "No remarks.")
     pdf.ln(10)
 
     # Photos Logic
@@ -51,28 +53,31 @@ def create_pdf(log_data, photo_urls):
         pdf.set_font("helvetica", "B", 10)
         pdf.cell(0, 10, "Shop Floor Media:", ln=True)
         
+        y_start = pdf.get_y()
         for i, url in enumerate(photo_urls):
             try:
-                resp = requests.get(url, timeout=10)
+                # Fast timeout to prevent app hanging
+                resp = requests.get(url, timeout=5)
                 if resp.status_code == 200:
                     img = BytesIO(resp.content)
-                    # 2-column layout logic
+                    
+                    # 2-column layout
                     x = 10 if i % 2 == 0 else 110
-                    if i > 0 and i % 2 == 0: 
-                        pdf.ln(75) 
-                        # Check if we need a new page
-                        if pdf.get_y() > 220:
+                    if i > 0 and i % 2 == 0:
+                        y_start += 75
+                        if y_start > 230:
                             pdf.add_page()
-                    pdf.image(img, x=x, w=90)
-            except Exception as e:
-                print(f"Skipping image due to error: {e}")
+                            y_start = 30
+                    
+                    pdf.image(img, x=x, y=y_start, w=90)
+            except:
                 continue
     
-    # IMPORTANT: Convert output to bytes for Streamlit
+    # Return as clean bytes
     return bytes(pdf.output())
 
 # --- DATA FETCHING ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30) # Reduced TTL for faster refresh
 def get_masters():
     try:
         c_data = conn.table("customer_master").select("name").execute().data
@@ -85,7 +90,6 @@ customer_list, job_list = get_masters()
 
 st.title("🏗️ B&G Professional Dispatcher")
 
-# --- TABS ---
 tab_entry, tab_archive, tab_masters = st.tabs(["📝 New Entry", "📂 Weekly Archive", "🛠️ Admin Masters"])
 
 # --- TAB 1: NEW ENTRY ---
@@ -108,7 +112,7 @@ with tab_entry:
         
         if st.form_submit_button("🚀 Save & Upload"):
             if not eng or not eq:
-                st.error("Missing Details.")
+                st.error("Please fill Engineer and Equipment.")
             else:
                 try:
                     res = conn.table("progress_logs").insert({
@@ -127,12 +131,11 @@ with tab_entry:
                             path=path, file=pic.getvalue(), file_options={"upsert": "true"}
                         )
                     st.success("Cloud Sync Complete!")
-                    st.balloons()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# --- TAB 2: ARCHIVE & PDF (FAIL-SAFE VERSION) ---
+# --- TAB 2: ARCHIVE ---
 with tab_archive:
     st.subheader("📊 Customer Reviews")
     col_f1, col_f2 = st.columns(2)
@@ -150,48 +153,36 @@ with tab_archive:
             with st.expander(f"📦 {log['equipment']} | {log['customer']} ({log['created_at'][:10]})"):
                 t_col, p_col = st.columns([1,1])
                 
-                # 1. Fetch Photos
+                # Fetch Photos
                 folder = f"reports/{log['id']}"
-                try:
-                    files = conn.client.storage.from_("progress-photos").list(folder)
-                    photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
-                except Exception as e:
-                    st.error(f"Storage Error: {e}")
-                    photo_urls = []
+                files = conn.client.storage.from_("progress-photos").list(folder)
+                photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
 
                 with t_col:
                     st.write(f"**Status:** :blue[{log['fab_status']}]")
                     st.info(f"**Remarks:** {log['remarks']}")
                     
-                    # 2. PDF BUTTON LOGIC WITH DEBUGGING
+                    # PDF GENERATION
                     if not photo_urls:
-                        st.warning("⚠️ No photos found. Please upload at least one photo to enable PDF download.")
+                        st.warning("⚠️ No photos - PDF disabled.")
                     else:
                         try:
-                            # Generate PDF bytes
-                            pdf_bytes = create_pdf(log, photo_urls)
-                            
-                            if pdf_bytes:
-                                st.download_button(
-                                    label="📥 Download PDF Report",
-                                    data=pdf_bytes,
-                                    file_name=f"B&G_Report_{log['job_code']}.pdf",
-                                    mime="application/pdf",
-                                    key=f"btn_final_{log['id']}"
-                                )
-                            else:
-                                st.error("❌ PDF data generated was empty.")
+                            # Pre-calculating bytes to ensure button has data
+                            report_bytes = create_pdf(log, photo_urls)
+                            st.download_button(
+                                label="📥 Download PDF Report",
+                                data=report_bytes,
+                                file_name=f"Report_{log['job_code']}.pdf",
+                                mime="application/pdf",
+                                key=f"dl_btn_{log['id']}" # Unique key is vital
+                            )
                         except Exception as e:
-                            st.error(f"❌ PDF Generation Failed: {e}")
-                            st.info("Check if logo.png exists and bucket is Public.")
+                            st.error(f"PDF Error: {e}")
 
                 with p_col:
                     if photo_urls:
                         st.image(photo_urls, use_container_width=True)
-                    else:
-                        st.caption("No images uploaded for this entry.")
-    else:
-        st.info("No logs found for the selected filters.")
+
 # --- TAB 3: ADMIN ---
 with tab_masters:
     if st.text_input("Admin PIN", type="password") == "1234":
