@@ -36,6 +36,7 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
+        # 1. B&G Header Logo/Bar
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         pdf.set_text_color(255, 255, 255)
@@ -45,11 +46,13 @@ def generate_pdf(logs):
         pdf.cell(0, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
         pdf.ln(15)
 
+        # 2. Job Info Header
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
+        # 3. Header Fields Table
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -61,6 +64,7 @@ def generate_pdf(logs):
 
         pdf.ln(5)
 
+        # 4. Milestone Table
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -81,6 +85,7 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
+        # 5. Progress Photo (Placed at the bottom of PDF page)
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
@@ -165,44 +170,33 @@ with tab2:
         st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}.pdf")
         for log in data:
             with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
-                # --- NEW TABLE LAYOUT FOR JOB DETAILS ---
-                st.markdown("### 📋 Job Specifications")
-                row1_1, row1_2, row1_3 = st.columns(3)
-                row1_1.markdown(f"**Customer:**\n{log['customer']}")
-                row1_2.markdown(f"**Job Code:**\n{log['job_code']}")
-                row1_3.markdown(f"**Equipment:**\n{log['equipment']}")
+                # --- TABLE TYPE LAYOUT FOR JOB DETAILS ---
+                t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+                t_col1.markdown(f"**Customer**\n\n{log['customer']}")
+                t_col2.markdown(f"**Engineer**\n\n{log['engineer']}")
+                t_col3.markdown(f"**PO No.**\n\n{log['po_no']}")
+                t_col4.markdown(f"**PO Date**\n\n{log['po_date']}")
                 
-                row2_1, row2_2, row2_3 = st.columns(3)
-                row2_1.markdown(f"**Engineer:**\n{log['engineer']}")
-                row2_2.markdown(f"**PO Number:**\n{log['po_no']}")
-                row2_3.markdown(f"**PO Date:**\n{log['po_date']}")
+                t2_col1, t2_col2, t2_col3, t2_col4 = st.columns(4)
+                t2_col1.markdown(f"**Equipment**\n\n{log['equipment']}")
+                t2_col2.markdown(f"**Contract Delivery**\n\n{log['po_delivery_date']}")
+                t2_col3.markdown(f"**Exp. Dispatch**\n\n{log['exp_dispatch_date']}")
+                t2_col4.markdown(f"**Entry ID**\n\n{log['id']}")
                 
-                row3_1, row3_2, row3_3 = st.columns(3)
-                row3_1.markdown(f"**Contract Delivery:**\n{log['po_delivery_date']}")
-                row3_2.markdown(f"**Revised Dispatch:**\n{log['exp_dispatch_date']}")
-                row3_3.write("") # Placeholder
+                st.markdown("---")
+                # --- MILESTONES ---
+                for label, s_key, n_key in MILESTONE_MAP:
+                    r1, r2, r3 = st.columns([2,1,3])
+                    r1.write(f"**{label}**")
+                    r2.write(f"🟢 {log[s_key]}" if log[s_key] in ["Completed", "Approved", "Submitted"] else f"🟡 {log[s_key]}")
+                    r3.write(f"_{log[n_key]}_")
                 
-                st.divider()
+                # --- PHOTO AT THE BOTTOM ---
+                st.markdown("**Progress Photo**")
+                url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
+                st.image(url, width=400)
                 
-                # --- MILESTONES & IMAGE ---
-                col_info, col_img = st.columns([3, 2])
-                
-                with col_info:
-                    st.markdown("**📊 Milestone Status**")
-                    for label, s_key, n_key in MILESTONE_MAP:
-                        r1, r2, r3 = st.columns([2, 1, 3])
-                        r1.write(f"**{label}**")
-                        status_val = log[s_key]
-                        icon = "🟢" if status_val in ["Completed", "Approved", "Submitted"] else "🟡"
-                        r2.write(f"{icon} {status_val}")
-                        r3.write(f"_{log[n_key]}_")
-                
-                with col_img:
-                    st.markdown("**📸 Progress Photo**")
-                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-                    st.image(url, use_container_width=True)
-                
-                if st.button("🗑️ Delete Entry", key=f"del_{log['id']}", type="secondary"):
+                if st.button("🗑️ Delete", key=f"del_{log['id']}"):
                     conn.table("progress_logs").delete().eq("id", log['id']).execute()
                     try: conn.client.storage.from_("progress-photos").remove([f"{log['id']}.jpg"])
                     except: pass
