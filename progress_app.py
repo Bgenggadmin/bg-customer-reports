@@ -121,46 +121,63 @@ with tab_entry:
                 st.balloons()
                 st.rerun()
 
-# --- TAB 2: ARCHIVE & PDF ---
+# --- TAB 2: ARCHIVE & PDF (STABILIZED) ---
 with tab_archive:
     st.subheader("📊 Customer-wise Weekly Reviews")
     col_f1, col_f2 = st.columns(2)
-    sel_cust = col_f1.selectbox("Filter by Customer", ["All"] + customer_list)
-    show_weekly = col_f2.checkbox("Show only last 7 days", value=True)
+    sel_cust = col_f1.selectbox("Filter by Customer", ["All"] + customer_list, key="filter_cust")
+    show_weekly = col_f2.checkbox("Show only last 7 days", value=True, key="filter_week")
 
+    # 1. Fetch Data based on Filters
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
-    if sel_cust != "All": query = query.eq("customer", sel_cust)
-    if show_weekly: query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
+    if sel_cust != "All": 
+        query = query.eq("customer", sel_cust)
+    if show_weekly: 
+        query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
     
     data = query.execute().data
+
     if data:
         for log in data:
+            # UNIQUE KEY for each expander/button is critical in Streamlit
+            log_id = log['id']
             with st.expander(f"📦 {log['equipment']} ({log['job_code']}) - {log['created_at'][:10]}"):
-                t_col, p_col = st.columns([1,1])
-                photo_urls = []
-                # Fetch Photos
-                folder = f"reports/{log['id']}"
+                
+                # Setup Columns: Info on Left, Photos on Right
+                t_col, p_col = st.columns([1, 1])
+                
+                # Fetch Photos from Storage
+                folder = f"reports/{log_id}"
                 files = conn.client.storage.from_("progress-photos").list(folder)
-                for f in files:
-                    url = conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}")
-                    photo_urls.append(url)
+                photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
 
                 with t_col:
-                    st.write(f"**Status:** {log['fab_status']}")
-                    st.write(f"**Engineer:** {log['engineer']}")
-                    st.info(f"Remarks: {log['remarks']}")
+                    st.markdown(f"**Customer:** {log['customer']}")
+                    st.markdown(f"**Status:** :blue[{log['fab_status']}]")
+                    st.markdown(f"**Remarks:** {log['remarks']}")
                     
-                    # PDF Download
-                    if st.button("Generate PDF", key=f"pdf_{log['id']}"):
-                        pdf_out = create_pdf(log, photo_urls)
-                        st.download_button("📥 Download Now", data=pdf_out, 
-                                         file_name=f"Report_{log['job_code']}.pdf", mime="application/pdf")
+                    # --- PDF DOWNLOAD LOGIC ---
+                    if photo_urls:
+                        # Pre-generate the PDF so the button is ready
+                        pdf_data = create_pdf(log, photo_urls)
+                        st.download_button(
+                            label="📥 Download PDF Report",
+                            data=pdf_data,
+                            file_name=f"B&G_Report_{log['job_code']}_{log['created_at'][:10]}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_{log_id}" # Unique key prevents the 'disappearing button' bug
+                        )
+                    else:
+                        st.warning("No photos found. PDF requires at least one image.")
 
                 with p_col:
                     if photo_urls:
-                        st.image(photo_urls, use_container_width=True)
+                        # Show photos in a tight grid
+                        st.image(photo_urls, use_container_width=True, caption=[f"Shop Photo {i+1}" for i in range(len(photo_urls))])
+                    else:
+                        st.info("No media attached.")
     else:
-        st.info("No logs found for this selection.")
+        st.info("No logs found for this selection. Try changing the filters.")
 
 # --- TAB 3: ADMIN ---
 with tab_masters:
