@@ -94,7 +94,8 @@ with tab_entry:
                         # Use actual name or generate one for camera shots
                         fname = getattr(pic, 'name', f"camera_shot_{i}.jpg")
                         path = f"reports/{log_id}/{fname}"
-                        conn.storage.from_("progress-photos").upload(path, pic.getvalue())
+                        conn.client.storage.from_("progress-photos").upload(path, pic.getvalue())
+#      ^--- Added .client here
                 
                 st.success(f"✅ Report for {eq} successfully archived with {len(all_pics)} photos!")
                 st.balloons()
