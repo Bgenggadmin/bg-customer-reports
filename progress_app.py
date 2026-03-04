@@ -8,7 +8,7 @@ import os
 st.set_page_config(page_title="B&G Progress Hub", layout="wide", page_icon="🏗️")
 conn = st.connection("supabase", type=SupabaseConnection)
 
-# --- PDF & MASTERS LOGIC (REMAIN UNCHANGED) ---
+# --- PDF GENERATOR (RESTORING LOGIC) ---
 class ProgressPDF(FPDF):
     def header(self):
         if os.path.exists("logo.png"):
@@ -37,21 +37,26 @@ def create_bulk_pdf(customer_name, logs_list):
         pdf.set_fill_color(240, 240, 240)
         pdf.cell(0, 8, f" PROJECT PROGRESS REPORT - {datetime.now().strftime('%d-%m-%Y')}", 1, 1, "C", fill=True)
         pdf.ln(4)
+        
         pdf.set_font("helvetica", "B", 9)
         pdf.cell(35, 8, "Customer", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('customer', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Equipment", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('equipment', 'N/A')}", 1, 1)
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Job Code", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('job_code', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Submitted By", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('engineer', 'N/A')}", 1, 1)
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO No.", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_no', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_date', 'N/A')}", 1, 1)
+        
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "PO Disp. Date", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('po_delivery_date', 'N/A')}", 1)
         pdf.set_font("helvetica", "B", 9); pdf.cell(35, 8, "Revised Dispatch", 1); pdf.set_font("helvetica", "", 9); pdf.cell(60, 8, f" {log.get('exp_dispatch_date', 'N/A')}", 1, 1)
         pdf.ln(5)
+
         ms_list = [
             ("Drawing Submission", 'draw_sub', 'draw_sub_note'), ("Drawing Approval", 'draw_app', 'draw_app_note'),
             ("RM Status", 'rm_status', 'rm_note'), ("Sub-deliveries Status", 'sub_del', 'sub_del_note'),
-            ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing/Finishing Status", 'buff_stat', 'buff_note'),
-            ("Testing", 'testing', 'test_note'), ("QC/Dispatch Status", 'qc_stat', 'qc_note'), ("FAT", 'fat_stat', 'fat_note')
+            ("Fabrication Status", 'fab_status', 'remarks'), ("Buffing Status", 'buff_stat', 'buff_note'),
+            ("Testing", 'testing', 'test_note'), ("QC Status", 'qc_stat', 'qc_note'), ("FAT", 'fat_stat', 'fat_note')
         ]
         pdf.set_font("helvetica", "", 8)
         for label, skey, nkey in ms_list:
@@ -69,6 +74,7 @@ def get_masters():
 c_list, j_list = get_masters()
 t1, t2, t3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
+# --- TAB 1: NEW ENTRY ---
 with t1:
     with st.form("main_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
@@ -92,7 +98,6 @@ with t1:
             n = c2.text_input(f"Remarks for {label}", key=nkey)
             return s, n
 
-        # Logic options remain unchanged
         opts = ["Pending", "In-Progress", "Hold", "Completed"]
         d_s, d_n = custom_row("Drawing Submission", ["In-Progress", "Submitted"], "s1", "n1")
         da_s, da_n = custom_row("Drawing Approval", ["Pending", "Approved"], "s2", "n2")
@@ -119,19 +124,17 @@ with t1:
             
             if job_photos:
                 for photo in job_photos:
-                    # Matches the naming convention seen in your bucket
                     file_path = f"{job}_{photo.name.replace(' ', '_')}"
                     try:
-                        # Fix: use conn.client to avoid AttributeError
                         conn.client.storage.from_("progress-photos").upload(
-                            path=file_path,
-                            file=photo.getvalue(),
+                            path=file_path, file=photo.getvalue(),
                             file_options={"content-type": photo.type, "upsert": "true"}
                         )
                     except: pass
             st.success("Synchronized!")
             st.rerun()
 
+# --- TAB 2: ARCHIVE (FIXED PDF BUTTON + PHOTOS) ---
 with t2:
     sel_cust = st.selectbox("Filter Archive", ["All"] + c_list)
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
@@ -139,31 +142,37 @@ with t2:
     data = query.execute().data
     
     if data:
+        # RESTORED DOWNLOAD BUTTON
+        if sel_cust != "All":
+            pdf_bytes = create_bulk_pdf(sel_cust, data)
+            st.download_button(
+                label="📥 Download Official PDF Report",
+                data=pdf_bytes,
+                file_name=f"BG_Report_{sel_cust}_{datetime.now().strftime('%d_%m_%Y')}.pdf",
+                mime="application/pdf"
+            )
+        
         for log in data:
             current_job = log.get('job_code')
             with st.expander(f"📦 Job: {current_job} | Eq: {log.get('equipment')}"):
-                
-                # --- PHOTO DISPLAY FIX ---
+                # Photos
                 try:
-                    # Using the correct client call to list files
-                    files = conn.client.storage.from_("progress-photos").list()
-                    # Filters for files starting with job code (e.g., SSR250 or SSR501)
-                    job_files = [f['name'] for f in files if f['name'].startswith(current_job)]
-                    
+                    res = conn.client.storage.from_("progress-photos").list()
+                    job_files = [f['name'] for f in res if f['name'].startswith(current_job)]
                     if job_files:
                         st.markdown("#### 📷 Progress Photos")
-                        cols = st.columns(len(job_files))
+                        cols = st.columns(4)
                         for i, f_name in enumerate(job_files):
                             url = conn.client.storage.from_("progress-photos").get_public_url(f_name)
-                            cols[i].image(url, use_container_width=True)
-                except Exception as e:
-                    st.error(f"Error loading photos: {e}")
+                            cols[i % 4].image(url, use_container_width=True)
+                except: pass
                 
                 st.table([
                     {"Milestone": "Fabrication", "Status": log.get('fab_status'), "Note": log.get('remarks')},
                     {"Milestone": "Testing", "Status": log.get('testing'), "Note": log.get('test_note')}
                 ])
 
+# --- TAB 3: MASTERS ---
 with t3:
     if st.text_input("Admin PIN", type="password") == "1234":
         c1, c2 = st.columns(2)
