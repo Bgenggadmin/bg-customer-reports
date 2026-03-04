@@ -40,25 +40,29 @@ def generate_pdf(logs):
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # --- LOGO LOGIC ---
+        # --- LOGO LOGIC (Updated for better reliability) ---
         try:
-            logo_url = conn.client.storage.from_("progress-photos").get_public_url("logo.png")
-            logo_res = requests.get(logo_url)
-            if logo_res.status_code == 200:
-                pdf.image(BytesIO(logo_res.content), x=10, y=8, h=20)
-        except:
+            # Using download instead of public URL to ensure we get the data directly
+            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
+            if logo_data:
+                pdf.image(BytesIO(logo_data), x=10, y=5, h=20)
+        except Exception:
             pass
 
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        pdf.cell(0, 12, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
+        # Shifted text to the right slightly to accommodate logo
+        pdf.set_xy(40, 10) 
+        pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
         pdf.set_font("Arial", "I", 10)
-        pdf.cell(0, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
+        pdf.set_x(40)
+        pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
         pdf.ln(15)
 
         # 2. Job Info Header
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
+        pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
@@ -95,7 +99,7 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
-        # 5. Progress Photo (Placed at the bottom of PDF page)
+        # 5. Progress Photo
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
@@ -180,7 +184,6 @@ with tab2:
         st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}.pdf")
         for log in data:
             with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
-                # --- TABLE TYPE LAYOUT FOR JOB DETAILS ---
                 t_col1, t_col2, t_col3, t_col4 = st.columns(4)
                 t_col1.markdown(f"**Customer**\n\n{log['customer']}")
                 t_col2.markdown(f"**Engineer**\n\n{log['engineer']}")
@@ -194,14 +197,12 @@ with tab2:
                 t2_col4.markdown(f"**Entry ID**\n\n{log['id']}")
                 
                 st.markdown("---")
-                # --- MILESTONES ---
                 for label, s_key, n_key in MILESTONE_MAP:
                     r1, r2, r3 = st.columns([2,1,3])
                     r1.write(f"**{label}**")
                     r2.write(f"🟢 {log[s_key]}" if log[s_key] in ["Completed", "Approved", "Submitted"] else f"🟡 {log[s_key]}")
                     r3.write(f"_{log[n_key]}_")
                 
-                # --- PHOTO AT THE BOTTOM ---
                 st.markdown("**Progress Photo**")
                 url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
                 st.image(url, width=400)
