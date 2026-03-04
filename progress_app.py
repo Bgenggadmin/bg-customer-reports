@@ -132,53 +132,66 @@ with tab_entry:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# --- TAB 2: ARCHIVE & PDF ---
+# --- TAB 2: ARCHIVE & PDF (FAIL-SAFE VERSION) ---
 with tab_archive:
     st.subheader("📊 Customer Reviews")
     col_f1, col_f2 = st.columns(2)
-    sel_cust = col_f1.selectbox("Customer", ["All"] + customer_list)
-    show_weekly = col_f2.checkbox("Last 7 days only", value=True)
+    sel_cust = col_f1.selectbox("Customer", ["All"] + customer_list, key="cust_sel")
+    show_weekly = col_f2.checkbox("Last 7 days only", value=True, key="week_sel")
 
     query = conn.table("progress_logs").select("*").order("created_at", desc=True)
     if sel_cust != "All": query = query.eq("customer", sel_cust)
     if show_weekly: query = query.gte("created_at", (datetime.now() - timedelta(days=7)).isoformat())
     
     data = query.execute().data
+    
     if data:
         for log in data:
             with st.expander(f"📦 {log['equipment']} | {log['customer']} ({log['created_at'][:10]})"):
                 t_col, p_col = st.columns([1,1])
                 
+                # 1. Fetch Photos
                 folder = f"reports/{log['id']}"
-                files = conn.client.storage.from_("progress-photos").list(folder)
-                photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
+                try:
+                    files = conn.client.storage.from_("progress-photos").list(folder)
+                    photo_urls = [conn.client.storage.from_("progress-photos").get_public_url(f"{folder}/{f['name']}") for f in files]
+                except Exception as e:
+                    st.error(f"Storage Error: {e}")
+                    photo_urls = []
 
                 with t_col:
-                    st.write(f"**Status:** {log['fab_status']}")
-                    st.info(f"Remarks: {log['remarks']}")
+                    st.write(f"**Status:** :blue[{log['fab_status']}]")
+                    st.info(f"**Remarks:** {log['remarks']}")
                     
-                    if photo_urls:
-                        # Pre-generate PDF bytes
-                        try:
-                            pdf_bytes = create_pdf(log, photo_urls)
-                            st.download_button(
-                                label="📥 Download PDF",
-                                data=pdf_bytes,
-                                file_name=f"Report_{log['job_code']}.pdf",
-                                mime="application/pdf",
-                                key=f"btn_{log['id']}" # UNIQUE KEY
-                            )
-                        except Exception as e:
-                            st.error("PDF Error")
+                    # 2. PDF BUTTON LOGIC WITH DEBUGGING
+                    if not photo_urls:
+                        st.warning("⚠️ No photos found. Please upload at least one photo to enable PDF download.")
                     else:
-                        st.warning("No photos for PDF")
+                        try:
+                            # Generate PDF bytes
+                            pdf_bytes = create_pdf(log, photo_urls)
+                            
+                            if pdf_bytes:
+                                st.download_button(
+                                    label="📥 Download PDF Report",
+                                    data=pdf_bytes,
+                                    file_name=f"B&G_Report_{log['job_code']}.pdf",
+                                    mime="application/pdf",
+                                    key=f"btn_final_{log['id']}"
+                                )
+                            else:
+                                st.error("❌ PDF data generated was empty.")
+                        except Exception as e:
+                            st.error(f"❌ PDF Generation Failed: {e}")
+                            st.info("Check if logo.png exists and bucket is Public.")
 
                 with p_col:
                     if photo_urls:
                         st.image(photo_urls, use_container_width=True)
+                    else:
+                        st.caption("No images uploaded for this entry.")
     else:
-        st.info("No logs found.")
-
+        st.info("No logs found for the selected filters.")
 # --- TAB 3: ADMIN ---
 with tab_masters:
     if st.text_input("Admin PIN", type="password") == "1234":
