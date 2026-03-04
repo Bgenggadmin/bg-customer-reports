@@ -29,22 +29,14 @@ MILESTONE_MAP = [
 customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
 jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
-# --- PDF ENGINE (Placed before Tabs) ---
-def generate_pdf(logs):
-    pdf = FPDF()
-    for log in logs:
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
-       # --- PDF ENGINE ---
+# --- PDF ENGINE (INCORPORATED ENHANCEMENTS HERE) ---
 def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
     for log in logs:
         pdf.add_page()
         
-        # 1. B&G Header Bar (Logo Emulation)
+        # 1. B&G Header Logo/Bar
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         pdf.set_text_color(255, 255, 255)
@@ -54,7 +46,7 @@ def generate_pdf(logs):
         pdf.cell(0, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
         pdf.ln(15)
 
-        # 2. Reset Text Color & Job Header Line
+        # 2. Job Info Header
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
@@ -62,94 +54,47 @@ def generate_pdf(logs):
         
         # 3. Header Fields Table
         pdf.set_font("Arial", "B", 8)
-        pdf.set_fill_color(240, 240, 240) # Light Grey for labels
+        pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
-            f1 = HEADER_FIELDS[i]
-            f2 = HEADER_FIELDS[i+1]
+            f1, f2 = HEADER_FIELDS[i], HEADER_FIELDS[i+1]
             pdf.cell(30, 7, f" {f1.replace('_',' ').title()}", 1, 0, 'L', True)
             pdf.cell(65, 7, f" {str(log.get(f1,''))}", 1, 0, 'L')
             pdf.cell(30, 7, f" {f2.replace('_',' ').title()}", 1, 0, 'L', True)
             pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
 
-        # 4. Photo Handling (Centered and Scaled)
+        # 4. Progress Photo (Centered)
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
             if img_res.status_code == 200:
                 img = Image.open(BytesIO(img_res.content)).convert('RGB')
                 img.thumbnail((350, 350))
-                buf = BytesIO()
-                img.save(buf, format="JPEG")
+                buf = BytesIO(); img.save(buf, format="JPEG")
                 pdf.image(buf, x=75, y=pdf.get_y()+5, w=60)
                 pdf.set_y(pdf.get_y() + 55)
-        except: 
-            pdf.ln(5)
+        except: pdf.ln(5)
 
         # 5. Milestone Table with Color Coding
         pdf.set_font("Arial", "B", 9)
-        pdf.set_fill_color(0, 51, 102) 
-        pdf.set_text_color(255, 255, 255)
+        pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
         pdf.cell(35, 8, " Status", 1, 0, 'C', True)
         pdf.cell(95, 8, " Remarks", 1, 1, 'L', True)
         
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", "", 8)
-        
+        pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "", 8)
         for label, s_key, n_key in MILESTONE_MAP:
             status = str(log.get(s_key, 'Pending'))
+            # Apply color based on status
             if status in ["Completed", "Approved", "Submitted"]:
                 pdf.set_fill_color(144, 238, 144) # Green
             elif status in ["In-Progress", "Hold"]:
                 pdf.set_fill_color(255, 255, 204) # Yellow
             else:
                 pdf.set_fill_color(255, 255, 255) # White
+            
             pdf.cell(60, 7, f" {label}", 1)
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
-            
-    return bytes(pdf.output())
-        # 4. Photo Handling (Centered and Scaled)
-        try:
-            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-            img_res = requests.get(img_url)
-            if img_res.status_code == 200:
-                img = Image.open(BytesIO(img_res.content)).convert('RGB')
-                img.thumbnail((350, 350))
-                buf = BytesIO()
-                img.save(buf, format="JPEG")
-                # Center horizontally: (PageWidth 210 - ImageWidth 60) / 2 = 75
-                pdf.image(buf, x=75, y=pdf.get_y()+5, w=60)
-                pdf.set_y(pdf.get_y() + 55)
-        except: 
-            pdf.ln(5)
-
-        # 5. Milestone Table with Color Coding
-        pdf.set_font("Arial", "B", 9)
-        pdf.set_fill_color(0, 51, 102) # Header Blue
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
-        pdf.cell(35, 8, " Status", 1, 0, 'C', True)
-        pdf.cell(95, 8, " Remarks", 1, 1, 'L', True)
-        
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Arial", "", 8)
-        
-        for label, s_key, n_key in MILESTONE_MAP:
-            status = str(log.get(s_key, 'Pending'))
-            
-            # Logic for row colors
-            if status in ["Completed", "Approved", "Submitted"]:
-                pdf.set_fill_color(144, 238, 144) # Green
-            elif status in ["In-Progress", "Hold"]:
-                pdf.set_fill_color(255, 255, 204) # Yellow
-            else:
-                pdf.set_fill_color(255, 255, 255) # White
-                
-            pdf.cell(60, 7, f" {label}", 1)
-            pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
-            pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
-            
     return bytes(pdf.output())
 
 # --- APP TABS ---
@@ -211,11 +156,9 @@ with tab1:
 with tab2:
     st.subheader("📂 Report Archive")
     
-    # --- CUSTOMER FILTER (NEW LOGIC) ---
     cust_list = ["All Customers"] + customers
     selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
     
-    # Query building based on filter
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
@@ -249,7 +192,6 @@ with tab2:
 
 with tab3:
     st.header("🛠️ Master Data Management")
-    # ... (Keep your existing Master Data Management code here)
     col_cust, col_job = st.columns(2)
     with col_cust:
         st.subheader("👥 Customers")
