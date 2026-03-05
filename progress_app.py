@@ -21,7 +21,7 @@ MILESTONE_MAP = [
     ("Fabrication Status", "fab_status", "remarks"),
     ("Buffing Status", "buff_stat", "buff_note"),
     ("Testing Status", "testing", "test_note"),
-    ("QC Status", "qc_stat", "qc_note"),
+    ("Dispatch Status", "qc_stat", "qc_note"),
     ("FAT Status", "fat_stat", "fat_note")
 ]
 
