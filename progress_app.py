@@ -61,10 +61,7 @@ def generate_pdf(logs):
         pdf.set_x(65)
         pdf.cell(140, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-        pdf.set_font("Arial", "I", 10)
-        pdf.set_x(50)
-        pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
-        
+           
         # Reset color to black for the rest of the report
         pdf.set_text_color(0, 0, 0)
         pdf.ln(20)
