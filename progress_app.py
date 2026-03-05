@@ -36,43 +36,33 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. DRAW BLUE STRIP FIRST (Background layer)
+        # 1. B&G Header Logo/Bar
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # 2. DRAW LOGO SECOND (Foreground layer)
-        # We put this AFTER the rect so it stays on top
+        # --- LOGO LOGIC ---
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
-                # x=10, y=5. Increasing height to 25 to make it visible
-                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-        except Exception as e:
-            # If it fails, we keep going
+                pdf.image(BytesIO(logo_data), x=10, y=5, h=20)
+        except Exception:
             pass
 
-        # 3. HEADER TEXT
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        # Shift X to 50 so it doesn't overlap the logo on the left
-        pdf.set_xy(50, 10) 
-        pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
-        
+        pdf.set_xy(40, 10) 
+        pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
         pdf.set_font("Arial", "I", 10)
-        pdf.set_x(50)
-        pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
-        
-        # Reset colors for the body text
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(20) # Space after the blue header
+        pdf.set_x(40)
+        pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
+        pdf.ln(15)
 
-        # --- Sub-Header (Job Code) ---
+        pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
-
-        # --- Header Grid Fields ---
+        
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -84,7 +74,6 @@ def generate_pdf(logs):
 
         pdf.ln(5)
 
-        # --- Milestone Table ---
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -105,7 +94,6 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
-        # --- Progress Photo ---
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
@@ -113,20 +101,6 @@ def generate_pdf(logs):
                 img = Image.open(BytesIO(img_res.content)).convert('RGB')
                 img.thumbnail((350, 350))
                 buf = BytesIO(); img.save(buf, format="JPEG")
-                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
-        except: 
-            pass
-
-    return bytes(pdf.output())
-        # --- PHOTO LOGIC ---
-        try:
-            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-            img_res = requests.get(img_url)
-            if img_res.status_code == 200:
-                img = Image.open(BytesIO(img_res.content)).convert('RGB')
-                img.thumbnail((350, 350))
-                buf = BytesIO(); img.save(buf, format="JPEG")
-                # Position photo below the table
                 pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
         except: 
             pass
@@ -232,59 +206,67 @@ with tab2:
     st.subheader("📂 Report Archive")
     
     # 1. Row for Filters
-    filter_c1, filter_c2, filter_c3 = st.columns(3)
+    filter_c1, filter_c2 = st.columns(2)
     
     cust_list = ["All Customers"] + customers
     selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
     
+    # 2. NEW: Time-based Reporting Filter
     report_type = filter_c2.selectbox("📅 Report Duration", 
                                     ["All Time", "Current Week", "Current Month", "Custom Range"])
 
-    # 2. Date Input for Custom Range
-    start_date, end_date = None, None
-    if report_type == "Custom Range":
-        c_date = filter_c3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
-        if len(c_date) == 2:
-            start_date, end_date = c_date
-
-    # 3. Base Query Fetching
+    # Base Query
     query = conn.table("progress_logs").select("*").order("id", desc=True)
+
+    # Apply Customer Filter
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
     
+    # Fetch Data
     res = query.execute()
     data = res.data if res else []
 
-    # 4. Apply Time Filtering Logic (Python side)
-    filtered_data = []
-    today = datetime.now().date()
-    
+    # 3. Apply Time Filtering Logic (Python side)
     if data:
+        filtered_data = []
+        today = datetime.now().date()
+        
+        # Helper for Custom Range
+        start_date, end_date = None, None
+        if report_type == "Custom Range":
+            c_date = st.date_input("Select Range", [today, today])
+            if len(c_date) == 2:
+                start_date, end_date = c_date
+
         for log in data:
             try:
-                # Identify date (created_at is timestamp, po_date is date string)
+                # Handle different date string formats
                 raw_date = log.get('created_at') or log.get('po_date')
                 if not raw_date: continue
+                
+                # Extract only YYYY-MM-DD (first 10 chars)
                 log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
 
                 if report_type == "Current Week":
+                    # True ISO Week check (Monday to Sunday)
                     if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year:
                         filtered_data.append(log)
+                
                 elif report_type == "Current Month":
                     if log_date.month == today.month and log_date.year == today.year:
                         filtered_data.append(log)
+                
                 elif report_type == "Custom Range" and start_date and end_date:
                     if start_date <= log_date <= end_date:
                         filtered_data.append(log)
+                
                 elif report_type == "All Time":
                     filtered_data.append(log)
-            except:
+            except Exception as e:
+                # Skip logs with corrupted dates so the whole app doesn't crash
                 continue
         
         data = filtered_data
-
-    # 5. Display Logic
-    if data:
         # --- EXECUTIVE SUMMARY ---
         total_count = len(data)
         dispatched = sum(1 for log in data if log.get('qc_stat') == "Completed")
@@ -295,73 +277,19 @@ with tab2:
         m2.metric("Ready for Dispatch", dispatched)
         m3.metric("Currently in Fab", in_fab)
         st.divider()
-
-        # --- ARCHIVE ACTIONS ---
+    
+    # --- REST OF YOUR EXISTING ARCHIVE CODE ---
+    if data:
         st.write(f"📊 Showing {len(data)} reports")
+        st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}_{report_type}.pdf")
         
-        st.download_button(
-            label="📥 Download Filtered PDF Report",
-            data=generate_pdf(data),
-            file_name=f"BG_Report_{selected_cust}_{report_type}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-        st.write("") # Spacer replacing st.ln
-
-        # --- PROJECT CARDS ---
         for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                
-                # 1. VISUAL PROGRESS BAR
-                total_steps = len(MILESTONE_MAP)
-                done_count = sum(1 for _, s_key, _ in MILESTONE_MAP if log.get(s_key) in ["Completed", "Approved", "Submitted", "Received"])
-                progress_pct = done_count / total_steps
-                
-                p_col1, p_col2 = st.columns([4, 1])
-                p_col1.progress(progress_pct)
-                p_col2.write(f"**{int(progress_pct*100)}% Complete**")
-                
-                st.markdown("---")
-
-                # 2. KEY DETAILS GRID
+            with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
+                # ... [Keep all your existing t_col1, t_col2 code here] ...
                 t_col1, t_col2, t_col3, t_col4 = st.columns(4)
-                t_col1.markdown(f"**Equipment**\n\n{log.get('equipment','-')}")
-                t_col2.markdown(f"**PO Number**\n\n{log.get('po_no','-')}")
-                t_col3.markdown(f"**Engineer**\n\n{log.get('engineer','-')}")
-                t_col4.markdown(f"**Dispatch Date**\n\n{log.get('exp_dispatch_date','-')}")
-                
-                st.divider()
+                t_col1.markdown(f"**Customer**\n\n{log['customer']}")
+                # ... (rest of the archive display code remains the same)
 
-                # 3. MILESTONE TABLE (Streamlined Table Layout)
-                st.markdown("#### 🏁 Milestone Tracking Details")
-                
-                # --- TABLE HEADER ---
-                h1, h2, h3 = st.columns([1.5, 1, 2.5])
-                h1.write("**Milestone Item**")
-                h2.write("**Status**")
-                h3.write("**Remarks**")
-                st.markdown("---") # Visual separator under header
-
-                # --- TABLE ROWS ---
-                for label, s_key, n_key in MILESTONE_MAP:
-                    status = log.get(s_key, 'Pending')
-                    remark = log.get(n_key) if log.get(n_key) else "_NA_"
-                    
-                    r1, r2, r3 = st.columns([1.5, 1, 2.5])
-                    
-                    # Column 1: Milestone Name
-                    r1.write(label)
-                    
-                    # Column 2: Status with Color Indicators
-                    if status in ["Completed", "Approved", "Submitted", "Received"]:
-                        r2.success(status)
-                    elif status in ["In-Progress", "Scheduled", "Ordered"]:
-                        r2.warning(status)
-                    else:
-                        r2.info(status)
-                        
-                    # Column 3: Remarks (Italicized for a clean look)
-                    r3.write(f"_{remark}_")
 with tab3:
     st.header("🛠️ Master Data Management")
     col_cust, col_job = st.columns(2)
