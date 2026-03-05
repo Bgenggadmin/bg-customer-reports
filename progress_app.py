@@ -36,41 +36,36 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. BLUE STRIP
+        # 1. BLUE STRIP (Reduced Height to 25)
         pdf.set_fill_color(0, 51, 102) 
         pdf.rect(0, 0, 210, 25, 'F')
         
-        # 2. LOGO (Adjusted X, Y and Height)
+        # 2. LOGO (Reduced Height to 15)
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
-                # We move it slightly to the left (x=12) and 
-                # make it smaller (h=15) so it doesn't touch the text
                 pdf.image(BytesIO(logo_data), x=12, y=5, h=15) 
         except Exception:
             pass
 
-        # 3. HEADER TEXT (Shifted further right to avoid overlap)
+        # 3. HEADER TEXT (Positioned for smaller strip)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        # Shifted from 50 to 65 to clear the logo width
-        pdf.set_xy(65, 8) 
+        pdf.set_xy(65, 6) 
         pdf.cell(140, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
         pdf.set_x(65)
+        pdf.set_y(14)
         pdf.cell(140, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-           
-        # Reset color to black for the rest of the report
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(20)
 
-        # --- Job Header ---
+        # --- Job Header (Moved up to 30) ---
         pdf.set_font("Arial", "B", 10)
-        pdf.set_xy(10, 38)
+        pdf.set_xy(10, 30)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
-        pdf.ln(3)
+        pdf.ln(2)
         
         # --- Field Grid ---
         pdf.set_font("Arial", "B", 8)
@@ -126,6 +121,7 @@ with tab1:
     st.subheader("📋 Select Project")
     f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
 
+    # --- AUTO-FILL LOGIC ---
     last_data = {}
     if f_job:
         res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
@@ -134,25 +130,30 @@ with tab1:
     with st.form("main_entry_form", clear_on_submit=True):
         st.subheader("📋 Project Details")
         c1, c2, c3 = st.columns(3)
+        
+        # Auto-filled Selectbox
         f_cust = c1.selectbox("Customer", [""] + customers, 
                              index=customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0)
         c2.text_input("Selected Job", value=f_job, disabled=True)
+        # Auto-filled Text Input
         f_eq = c3.text_input("Equipment Name", value=last_data.get('equipment', ""))
         
         c4, c5, c6 = st.columns(3)
         f_po_n = c4.text_input("PO Number", value=last_data.get('po_no', ""))
         
-        prev_po_date = datetime.now()
-        if last_data.get('po_date'):
-            try: prev_po_date = datetime.strptime(last_data['po_date'], "%Y-%m-%d")
-            except: pass
+        # Safe Date Conversion for Auto-fill
+        def get_safe_date(field_name):
+            if last_data.get(field_name):
+                try: return datetime.strptime(last_data[field_name], "%Y-%m-%d")
+                except: return datetime.now()
+            return datetime.now()
 
-        f_po_d = c5.date_input("PO Date", value=prev_po_date)
+        f_po_d = c5.date_input("PO Date", value=get_safe_date('po_date'))
         f_eng = c6.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
         
         c7, c8 = st.columns(2)
-        f_p_del = c7.date_input("PO Delivery Date", value=datetime.strptime(last_data['po_delivery_date'], "%Y-%m-%d") if last_data.get('po_delivery_date') else datetime.now())
-        f_r_del = c8.date_input("Revised Dispatch Date", value=datetime.strptime(last_data['exp_dispatch_date'], "%Y-%m-%d") if last_data.get('exp_dispatch_date') else datetime.now())
+        f_p_del = c7.date_input("PO Delivery Date", value=get_safe_date('po_delivery_date'))
+        f_r_del = c8.date_input("Revised Dispatch Date", value=get_safe_date('exp_dispatch_date'))
 
         st.divider()
         st.subheader("📊 Milestone Tracking")
@@ -160,6 +161,7 @@ with tab1:
         
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
+            # Determine Options
             if label == "Drawing Submission": opts = ["Pending", "NA", "In-Progress", "Submitted"]
             elif label == "Drawing Approval": opts = ["Pending", "NA", "In-Progress", "Approved"]
             elif label == "RM Status": opts = ["Pending", "Ordered", "In-Progress", "NA", "Received", "Hold"]
@@ -171,12 +173,10 @@ with tab1:
             elif label == "FAT Status": opts = ["Scheduled", "NA", "In-Progress", "Completed"]
             else: opts = ["Pending", "NA", "Scheduled", "Hold","In-Progress", "Completed"]
 
+            # Auto-fill Dropdown logic
             prev_status = last_data.get(skey, "Pending")
-            if prev_status in ["Submitted", "Approved", "Completed", "Received"]:
-                opts = [opt for opt in opts if opt not in ["Pending", "In-Progress", "Planning", "Ordered"]]
-                if prev_status not in opts: opts.insert(0, prev_status)
-
             default_idx = opts.index(prev_status) if prev_status in opts else 0
+            
             m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"form_{nkey}")
 
@@ -204,6 +204,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
+# (Tabs 2 and 3 remain the same as your provided script)
 with tab2:
     st.subheader("📂 Report Archive")
     
