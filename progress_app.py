@@ -181,7 +181,43 @@ with tab1:
             m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks", value=last_data.get(nkey, ""), key=f"form_{nkey}")
 
-        # [Rest of the form and submission logic remains the same]
+st.divider()
+        st.subheader("📸 Progress Capture")
+        cam_photo = st.camera_input("Take Progress Photo")
+
+        # --- ADD THIS SUBMIT BUTTON BLOCK ---
+        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
+            if not f_cust or not f_job:
+                st.error("Select a Job Code and Customer first!")
+            else:
+                try:
+                    # Collect all form data into the payload
+                    entry_payload = {
+                        "customer": f_cust, 
+                        "job_code": f_job, 
+                        "equipment": f_eq,
+                        "po_no": f_po_n, 
+                        "po_date": str(f_po_d), 
+                        "engineer": f_eng,
+                        "po_delivery_date": str(f_p_del), 
+                        "exp_dispatch_date": str(f_r_del),
+                        **m_responses # This expands all your milestone status & notes
+                    }
+                    
+                    # 1. Insert Record into Supabase
+                    res = conn.table("progress_logs").insert(entry_payload).execute()
+                    
+                    # 2. Upload Photo if captured
+                    if cam_photo and res.data:
+                        file_path = f"{res.data[0]['id']}.jpg"
+                        conn.client.storage.from_("progress-photos").upload(file_path, cam_photo.getvalue())
+                    
+                    st.success("✅ Update Saved Successfully!")
+                    st.rerun() # Refresh to update the Autofill and Archive
+                    
+                except Exception as e:
+                    st.error(f"Error saving data: {e}")
+
 # (Tabs 2 and 3 remain the same as your provided script)
 with tab2:
     st.subheader("📂 Report Archive")
