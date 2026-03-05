@@ -131,7 +131,7 @@ with tab1:
         f_eng = c6.text_input("Responsible Engineer")
         
         c7, c8 = st.columns(2)
-        f_p_del = c7.date_input("Contractual Delivery Date")
+        f_p_del = c7.date_input("PO Delivery Date")
         f_r_del = c8.date_input("Revised Dispatch Date")
 
         st.divider()
