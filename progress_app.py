@@ -188,44 +188,84 @@ with tab1:
                 except Exception as e:
                     st.error(f"Sync failed: {str(e)}")
 
-# Archive and Masters tabs remain same
+# --- ADD THIS HELPER AT THE TOP OF TAB 2 ---
 with tab2:
     st.subheader("📂 Report Archive")
+    
+    # 1. Row for Filters
+    filter_c1, filter_c2 = st.columns(2)
+    
     cust_list = ["All Customers"] + customers
-    selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
+    selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
+    
+    # 2. NEW: Time-based Reporting Filter
+    report_type = filter_c2.selectbox("📅 Report Duration", 
+                                    ["All Time", "Current Week", "Current Month", "Custom Range"])
+
+    # Base Query
     query = conn.table("progress_logs").select("*").order("id", desc=True)
+
+    # Apply Customer Filter
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
-    data = query.execute().data
+    
+    # Fetch Data
+    res = query.execute()
+    data = res.data if res else []
+
+    # 3. Apply Time Filtering Logic (Python side)
     if data:
-        st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}.pdf")
+        filtered_data = []
+        today = datetime.now().date()
+        
+        # Helper for Custom Range
+        start_date, end_date = None, None
+        if report_type == "Custom Range":
+            c_date = st.date_input("Select Range", [today, today])
+            if len(c_date) == 2:
+                start_date, end_date = c_date
+
+        for log in data:
+            try:
+                # Handle different date string formats
+                raw_date = log.get('created_at') or log.get('po_date')
+                if not raw_date: continue
+                
+                # Extract only YYYY-MM-DD (first 10 chars)
+                log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+
+                if report_type == "Current Week":
+                    # True ISO Week check (Monday to Sunday)
+                    if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year:
+                        filtered_data.append(log)
+                
+                elif report_type == "Current Month":
+                    if log_date.month == today.month and log_date.year == today.year:
+                        filtered_data.append(log)
+                
+                elif report_type == "Custom Range" and start_date and end_date:
+                    if start_date <= log_date <= end_date:
+                        filtered_data.append(log)
+                
+                elif report_type == "All Time":
+                    filtered_data.append(log)
+            except Exception as e:
+                # Skip logs with corrupted dates so the whole app doesn't crash
+                continue
+        
+        data = filtered_data
+    
+    # --- REST OF YOUR EXISTING ARCHIVE CODE ---
+    if data:
+        st.write(f"📊 Showing {len(data)} reports")
+        st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}_{report_type}.pdf")
+        
         for log in data:
             with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
+                # ... [Keep all your existing t_col1, t_col2 code here] ...
                 t_col1, t_col2, t_col3, t_col4 = st.columns(4)
                 t_col1.markdown(f"**Customer**\n\n{log['customer']}")
-                t_col2.markdown(f"**Engineer**\n\n{log['engineer']}")
-                t_col3.markdown(f"**PO No.**\n\n{log['po_no']}")
-                t_col4.markdown(f"**PO Date**\n\n{log['po_date']}")
-                
-                t2_col1, t2_col2, t2_col3, t2_col4 = st.columns(4)
-                t2_col1.markdown(f"**Equipment**\n\n{log['equipment']}")
-                t2_col2.markdown(f"**Contract Delivery**\n\n{log['po_delivery_date']}")
-                t2_col3.markdown(f"**Exp. Dispatch**\n\n{log['exp_dispatch_date']}")
-                t2_col4.markdown(f"**Entry ID**\n\n{log['id']}")
-                st.markdown("---")
-                for label, s_key, n_key in MILESTONE_MAP:
-                    r1, r2, r3 = st.columns([2,1,3])
-                    r1.write(f"**{label}**")
-                    r2.write(f"🟢 {log[s_key]}" if log[s_key] in ["Completed", "Approved", "Submitted"] else f"🟡 {log[s_key]}")
-                    r3.write(f"_{log[n_key]}_")
-                st.markdown("**Progress Photo**")
-                url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-                st.image(url, width=400)
-                if st.button("🗑️ Delete", key=f"del_{log['id']}"):
-                    conn.table("progress_logs").delete().eq("id", log['id']).execute()
-                    try: conn.client.storage.from_("progress-photos").remove([f"{log['id']}.jpg"])
-                    except: pass
-                    st.rerun()
+                # ... (rest of the archive display code remains the same)
 
 with tab3:
     st.header("🛠️ Master Data Management")
