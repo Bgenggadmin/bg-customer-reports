@@ -143,8 +143,28 @@ with tab1:
         m_responses = {}
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
-            opts = ["Pending", "In-Progress", "Submitted"] if "Drawing" in label else ["Pending", "In-Progress", "Hold", "Completed"]
-            m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
+st.divider()
+        st.subheader("📊 Milestone Tracking")
+        m_responses = {}
+        
+        for label, skey, nkey in MILESTONE_MAP:
+            col_stat, col_note = st.columns([1, 2])
+            
+# --- Logic to define specific options ---
+        if "Drawing Submission" in label:
+                opts = ["Pending", "In-Progress", "Submitted"]
+        elif "Drawing Approval" in label:
+                opts = ["Pending", "In-Progress", "Approved"]
+        elif "RM Status" in label:
+                opts = ["Pending", "Ordered", "Received", "Hold"]
+        elif "Fabrication Status" in label:
+                opts = ["Pending", "In-Progress", "Hold", "Completed"]
+        else:
+# This covers everything else (Testing, QC, FAT, etc.)
+                opts = ["Pending", "In-Progress", "Completed"]
+
+            # --- Create the UI components ---
+m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
         if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
