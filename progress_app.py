@@ -150,15 +150,15 @@ with tab1:
             elif label == "Fabrication Status":
                 opts = ["Planning", "In-Progress", "Hold", "Completed"]
             elif label == "Buffing Status":
-                opts = ["Pending", "In-Progress", "Completed"]
+                opts = ["Planning", "In-Progress", "Completed"]
             elif label == "Testing Status":
-                opts = ["Pending", "In-Progress", "Completed"]
-            elif label == "QC Status":
+                opts = ["Scheduled", "In-Progress", "Completed"]
+            elif label == "Dispatch Status":
                 opts = ["Pending", "In-Progress", "Completed"]
             elif label == "FAT Status":
-                opts = ["Pending", "In-Progress", "Completed"]
+                opts = ["Scheduled", "In-Progress", "Completed"]
             else:
-                opts = ["Pending", "In-Progress", "Completed"]
+                opts = ["Pending", "Scheduled", "Hold","In-Progress", "Completed"]
 
             # --- UI components ---
             m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
