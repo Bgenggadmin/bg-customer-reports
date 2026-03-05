@@ -36,33 +36,40 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. B&G Header Logo/Bar
+        # 1. B&G Header Logo/Bar (The Background Strip)
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # --- LOGO LOGIC ---
+        # --- LOGO LOGIC (Left Aligned) ---
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
-                pdf.image(BytesIO(logo_data), x=10, y=5, h=20)
+                # x=10 (Left margin), y=5 (Top margin), h=25 (Scaled height)
+                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
         except Exception:
             pass
 
+        # --- TEXT LOGIC (Shifted Right & Left Aligned) ---
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(40, 10) 
-        pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
+        
+        # We start at x=50 to give the logo space on the left
+        pdf.set_xy(50, 10) 
+        pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
+        
         pdf.set_font("Arial", "I", 10)
-        pdf.set_x(40)
-        pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
+        pdf.set_x(50)
+        pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
+        
+        # --- RESET FOR CONTENT ---
         pdf.ln(15)
-
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
+        # --- HEADER FIELDS (Grid) ---
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -74,6 +81,7 @@ def generate_pdf(logs):
 
         pdf.ln(5)
 
+        # --- MILESTONE TABLE ---
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -94,6 +102,7 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
+        # --- PHOTO LOGIC ---
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
@@ -101,6 +110,7 @@ def generate_pdf(logs):
                 img = Image.open(BytesIO(img_res.content)).convert('RGB')
                 img.thumbnail((350, 350))
                 buf = BytesIO(); img.save(buf, format="JPEG")
+                # Position photo below the table
                 pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
         except: 
             pass
