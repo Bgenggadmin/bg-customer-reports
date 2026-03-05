@@ -154,7 +154,7 @@ with tab1:
             elif label == "Testing Status":
                 opts = ["Scheduled", "In-Progress", "Completed"]
             elif label == "Dispatch Status":
-                opts = ["Pending", "In-Progress", "Completed"]
+                opts = ["Pending", "Scheduled", "In-Progress", "Completed"]
             elif label == "FAT Status":
                 opts = ["Scheduled", "In-Progress", "Completed"]
             else:
