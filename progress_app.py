@@ -268,6 +268,61 @@ with tab2:
         m2.metric("Ready for Dispatch", dispatched)
         m3.metric("Currently in Fab", in_fab)
         st.divider()
+        # --- ARCHIVE LIST & ACTIONS ---
+        st.write(f"📊 Showing {len(data)} reports")
+        
+        # Action Bar: Download Button
+        st.download_button(
+            label="📥 Download Filtered PDF Report",
+            data=generate_pdf(data),
+            file_name=f"BG_Report_{selected_cust}_{report_type}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+        st.ln(1) # Small gap
+
+        for log in data:
+            # Expander Label with Job & Customer
+            with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
+                
+                # 1. VISUAL PROGRESS BAR
+                total_steps = len(MILESTONE_MAP)
+                # Count milestones that are essentially "Done"
+                done_count = sum(1 for _, s_key, _ in MILESTONE_MAP if log.get(s_key) in ["Completed", "Approved", "Submitted", "Received"])
+                progress_pct = done_count / total_steps
+                
+                p_col1, p_col2 = st.columns([4, 1])
+                p_col1.progress(progress_pct)
+                p_col2.write(f"**{int(progress_pct*100)}% Complete**")
+                
+                st.markdown("---")
+
+                # 2. KEY DETAILS GRID
+                t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+                t_col1.markdown(f"**Equipment**\n\n{log.get('equipment','-')}")
+                t_col2.markdown(f"**PO Number**\n\n{log.get('po_no','-')}")
+                t_col3.markdown(f"**Engineer**\n\n{log.get('engineer','-')}")
+                t_col4.markdown(f"**Dispatch Date**\n\n{log.get('exp_dispatch_date','-')}")
+                
+                st.divider()
+
+                # 3. MILESTONE TABLE
+                st.markdown("#### 🏁 Milestone Tracking Details")
+                for label, s_key, n_key in MILESTONE_MAP:
+                    m_c1, m_c2, m_c3 = st.columns([1, 1, 2])
+                    status = log.get(s_key, 'Pending')
+                    remark = log.get(n_key) if log.get(n_key) else "Proceeding as per schedule."
+                    
+                    m_c1.write(f"**{label}**")
+                    # Color coding status text for readability
+                    if status in ["Completed", "Approved"]:
+                        m_c2.success(status)
+                    elif status in ["In-Progress", "Scheduled"]:
+                        m_c2.warning(status)
+                    else:
+                        m_c2.write(f"`{status}`")
+                        
+                    m_c3.write(f"_{remark}_")
 
 with tab3:
     st.header("🛠️ Master Data Management")
