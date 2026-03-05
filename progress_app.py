@@ -85,7 +85,7 @@ def generate_pdf(logs):
             status = str(log.get(s_key, 'Pending'))
             if status in ["Completed", "Approved", "Submitted"]:
                 pdf.set_fill_color(144, 238, 144)
-            elif status in ["In-Progress", "Hold", "Ordered", "Received", "Planning"]:
+            elif status in ["In-Progress", "Hold", "Ordered", "Received", "Planning", "Scheduled"]:
                 pdf.set_fill_color(255, 255, 204)
             else:
                 pdf.set_fill_color(255, 255, 255)
@@ -128,10 +128,6 @@ with tab1:
         f_r_del = c8.date_input("Revised Dispatch Date")
 
         st.divider()
-        st.subheader("📸 Progress Capture")
-        cam_photo = st.camera_input("Take Progress Photo")
-
-        st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         
@@ -164,6 +160,11 @@ with tab1:
             m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
+        # --- PROGRESS CAPTURE MOVED TO BOTTOM ---
+        st.divider()
+        st.subheader("📸 Progress Capture")
+        cam_photo = st.camera_input("Take Progress Photo")
+
         if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
             if not f_cust or not f_job or not cam_photo:
                 st.error("Missing required data! Please ensure Customer, Job, and Photo are captured.")
@@ -187,7 +188,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"Sync failed: {str(e)}")
 
-# Archive and Masters tabs remain the same as your input
+# Archive and Masters tabs remain same
 with tab2:
     st.subheader("📂 Report Archive")
     cust_list = ["All Customers"] + customers
