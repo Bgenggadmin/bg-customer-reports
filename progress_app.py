@@ -36,29 +36,30 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. DRAW BLUE STRIP (Background)
+        # 1. BLUE STRIP
         pdf.set_fill_color(0, 51, 102) 
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # 2. LOGO (Enhanced Download Logic)
+        # 2. LOGO (Adjusted X, Y and Height)
         try:
-            # Try downloading the logo
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
-                # Use BytesIO to handle the image in memory
-                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-        except Exception as e:
-            # If it fails, we write a small hidden note for debugging
-            pdf.set_font("Arial", "I", 6)
-            pdf.set_text_color(255, 255, 255)
-            # This prints the error message in tiny text so you can see why it's missing
-            pdf.text(10, 32, f"Logo Error: {str(e)[:40]}")
+                # We move it slightly to the left (x=12) and 
+                # make it smaller (h=18) so it doesn't touch the text
+                pdf.image(BytesIO(logo_data), x=12, y=7, h=18) 
+        except Exception:
+            pass
 
-        # 3. HEADER TEXT (White on Blue)
+        # 3. HEADER TEXT (Shifted further right to avoid overlap)
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(50, 10) 
-        pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
+        # Shifted from 50 to 65 to clear the logo width
+        pdf.set_xy(65, 12) 
+        pdf.cell(140, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
+        
+        pdf.set_font("Arial", "I", 10)
+        pdf.set_x(65)
+        pdf.cell(140, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
         pdf.set_x(50)
