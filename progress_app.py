@@ -36,20 +36,19 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. DRAW BLUE STRIP FIRST (Background layer)
-        pdf.set_fill_color(0, 51, 102) # Dark Blue
+        # 1. Background Blue Strip
+        pdf.set_fill_color(0, 51, 102) 
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # 2. LOGO LOGIC (Properly wrapped try/except)
+        # 2. Logo (Wrapped in safe try/except)
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
         except Exception:
-            # If logo fails, we just skip it so the PDF still generates
             pass
 
-        # 3. HEADER TEXT
+        # 3. Header Text
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
         pdf.set_xy(50, 10) 
@@ -62,13 +61,13 @@ def generate_pdf(logs):
         pdf.set_text_color(0, 0, 0)
         pdf.ln(20)
 
-        # --- Sub-Header (Job Code) ---
+        # --- Job Header ---
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
-        # --- Header Grid Fields ---
+        # --- Field Grid ---
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -114,19 +113,6 @@ def generate_pdf(logs):
             pass
 
     return bytes(pdf.output())
-        # --- Photo Logic ---
-        try:
-            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-            img_res = requests.get(img_url)
-            if img_res.status_code == 200:
-                img = Image.open(BytesIO(img_res.content)).convert('RGB')
-                img.thumbnail((350, 350))
-                buf = BytesIO(); img.save(buf, format="JPEG")
-                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
-        except: 
-            pass
-
-    return bytes(pdf.output())
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
@@ -150,9 +136,12 @@ with tab1:
         
         c4, c5, c6 = st.columns(3)
         f_po_n = c4.text_input("PO Number", value=last_data.get('po_no', ""))
+        
         prev_po_date = datetime.now()
         if last_data.get('po_date'):
-            prev_po_date = datetime.strptime(last_data['po_date'], "%Y-%m-%d")
+            try: prev_po_date = datetime.strptime(last_data['po_date'], "%Y-%m-%d")
+            except: pass
+
         f_po_d = c5.date_input("PO Date", value=prev_po_date)
         f_eng = c6.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
         
@@ -213,21 +202,18 @@ with tab1:
 with tab2:
     st.subheader("📂 Report Archive")
     
-    # 1. Row for Filters
     filter_c1, filter_c2, filter_c3 = st.columns(3)
     cust_list = ["All Customers"] + customers
     selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
     report_type = filter_c2.selectbox("📅 Report Duration", 
                                     ["All Time", "Current Week", "Current Month", "Custom Range"])
 
-    # 2. Date Input for Custom Range (Corrected logic)
     start_date, end_date = None, None
     if report_type == "Custom Range":
         c_date = filter_c3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
         if isinstance(c_date, list) and len(c_date) == 2:
             start_date, end_date = c_date
 
-    # 3. Base Query Fetching
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
@@ -235,7 +221,6 @@ with tab2:
     res = query.execute()
     data = res.data if res else []
 
-    # 4. Apply Time Filtering Logic
     filtered_data = []
     today = datetime.now().date()
     
@@ -261,7 +246,6 @@ with tab2:
                 continue
         data = filtered_data
 
-    # 5. Display Logic
     if data:
         total_count = len(data)
         dispatched = sum(1 for log in data if log.get('qc_stat') == "Completed")
@@ -273,7 +257,6 @@ with tab2:
         m3.metric("Currently in Fab", in_fab)
         st.divider()
 
-        st.write(f"📊 Showing {len(data)} reports")
         st.download_button(
             label="📥 Download Filtered PDF Report",
             data=generate_pdf(data),
@@ -281,7 +264,6 @@ with tab2:
             mime="application/pdf",
             use_container_width=True
         )
-        st.write("") 
 
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
@@ -293,7 +275,7 @@ with tab2:
                 p_col1.progress(progress_pct)
                 p_col2.write(f"**{int(progress_pct*100)}% Complete**")
                 
-                st.markdown("---")
+                st.divider()
                 t_col1, t_col2, t_col3, t_col4 = st.columns(4)
                 t_col1.markdown(f"**Equipment**\n\n{log.get('equipment','-')}")
                 t_col2.markdown(f"**PO Number**\n\n{log.get('po_no','-')}")
@@ -301,7 +283,6 @@ with tab2:
                 t_col4.markdown(f"**Dispatch Date**\n\n{log.get('exp_dispatch_date','-')}")
                 
                 st.divider()
-                st.markdown("#### 🏁 Milestone Tracking Details")
                 for label, s_key, n_key in MILESTONE_MAP:
                     m_c1, m_c2, m_c3 = st.columns([1, 1, 2])
                     status = log.get(s_key, 'Pending')
@@ -311,8 +292,7 @@ with tab2:
                         m_c2.success(status)
                     elif status in ["In-Progress", "Scheduled", "Ordered"]:
                         m_c2.warning(status)
-                    else:
-                        m_c2.info(status)
+                    else: m_c2.info(status)
                     m_c3.write(f"_{remark}_")
     else:
         st.info("No reports found matching the selected filters.")
