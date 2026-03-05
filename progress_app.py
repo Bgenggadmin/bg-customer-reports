@@ -36,28 +36,36 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. Background Blue Strip
-                
-        # 2. Logo (Wrapped in safe try/except)
+        # 1. LOGO (Using Public URL for better reliability)
         try:
-            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
-            if logo_data:
-                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
+            # We try to get the public link first as it's faster for PDF generation
+            logo_url = conn.client.storage.from_("progress-photos").get_public_url("logo.png")
+            pdf.image(logo_url, x=10, y=8, h=20)
         except Exception:
-            pass
+            # Fallback to download if public URL is restricted
+            try:
+                logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
+                pdf.image(BytesIO(logo_data), x=10, y=8, h=20)
+            except:
+                pass # Skip logo if both methods fail
 
-        # 3. Header Text
-        pdf.set_text_color(0, 51, 102)
+        # 2. HEADER TEXT (Now in B&G Blue)
+        pdf.set_text_color(0, 51, 102) # B&G Dark Blue
         pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(50, 10) 
+        pdf.set_xy(50, 12) 
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
         pdf.set_x(50)
         pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
+        # 3. ACCENT LINE (Optional: Adds a sharp look since the strip is gone)
+        pdf.set_draw_color(0, 51, 102)
+        pdf.line(10, 35, 200, 35) 
+        
+        # Reset color to black for data
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(20)
+        pdf.ln(18)
 
         # --- Job Header ---
         pdf.set_font("Arial", "B", 10)
