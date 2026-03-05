@@ -36,24 +36,25 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. B&G Header Logo/Bar (The Background Strip)
+        # 1. DRAW BLUE STRIP FIRST (Background layer)
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # --- LOGO LOGIC (Left Aligned) ---
+        # 2. DRAW LOGO SECOND (Foreground layer)
+        # We put this AFTER the rect so it stays on top
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
-                # x=10 (Left margin), y=5 (Top margin), h=25 (Scaled height)
+                # x=10, y=5. Increasing height to 25 to make it visible
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-        except Exception:
+        except Exception as e:
+            # If it fails, we keep going
             pass
 
-        # --- TEXT LOGIC (Shifted Right & Left Aligned) ---
+        # 3. HEADER TEXT
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        
-        # We start at x=50 to give the logo space on the left
+        # Shift X to 50 so it doesn't overlap the logo on the left
         pdf.set_xy(50, 10) 
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
@@ -61,15 +62,17 @@ def generate_pdf(logs):
         pdf.set_x(50)
         pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-        # --- RESET FOR CONTENT ---
-        pdf.ln(15)
+        # Reset colors for the body text
         pdf.set_text_color(0, 0, 0)
+        pdf.ln(20) # Space after the blue header
+
+        # --- Sub-Header (Job Code) ---
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
-        
-        # --- HEADER FIELDS (Grid) ---
+
+        # --- Header Grid Fields ---
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -81,7 +84,7 @@ def generate_pdf(logs):
 
         pdf.ln(5)
 
-        # --- MILESTONE TABLE ---
+        # --- Milestone Table ---
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -102,6 +105,19 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
+        # --- Progress Photo ---
+        try:
+            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
+            img_res = requests.get(img_url)
+            if img_res.status_code == 200:
+                img = Image.open(BytesIO(img_res.content)).convert('RGB')
+                img.thumbnail((350, 350))
+                buf = BytesIO(); img.save(buf, format="JPEG")
+                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
+        except: 
+            pass
+
+    return bytes(pdf.output())
         # --- PHOTO LOGIC ---
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
