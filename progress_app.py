@@ -169,7 +169,7 @@ with tab1:
             elif label == "Testing Status": opts = ["Scheduled", "NA", "In-Progress", "Completed"]
             elif label == "Dispatch Status": opts = ["Pending", "Scheduled", "In-Progress", "Completed"]
             elif label == "FAT Status": opts = ["Scheduled", "NA", "In-Progress", "Completed"]
-            else: opts = ["Pending", :NA", "Scheduled", "Hold","In-Progress", "Completed"]
+            else: opts = ["Pending", "NA", "Scheduled", "Hold","In-Progress", "Completed"]
 
             prev_status = last_data.get(skey, "Pending")
             if prev_status in ["Submitted", "Approved", "Completed", "Received"]:
