@@ -306,25 +306,27 @@ with tab2:
                 
                 st.divider()
 
-                # 3. MILESTONE TABLE (Simple Table Layout)
+                # 3. MILESTONE TABLE (Streamlined Table Layout)
                 st.markdown("#### 🏁 Milestone Tracking Details")
                 
-                # Header row for our "table"
-                h1, h2, h3 = st.columns([1.5, 1, 3])
+                # --- TABLE HEADER ---
+                h1, h2, h3 = st.columns([1.5, 1, 2.5])
                 h1.write("**Milestone Item**")
                 h2.write("**Status**")
                 h3.write("**Remarks**")
-                st.divider() # Line under the header
+                st.markdown("---") # Visual separator under header
 
+                # --- TABLE ROWS ---
                 for label, s_key, n_key in MILESTONE_MAP:
                     status = log.get(s_key, 'Pending')
-                    remark = log.get(n_key) if log.get(n_key) else "Proceeding as per schedule."
+                    remark = log.get(n_key) if log.get(n_key) else "_NA_"
                     
-                    # Row data
-                    r1, r2, r3 = st.columns([1.5, 1, 3])
-                    r1.write(f"**{label}**")
+                    r1, r2, r3 = st.columns([1.5, 1, 2.5])
                     
-                    # Using status tags for that professional "badge" look
+                    # Column 1: Milestone Name
+                    r1.write(label)
+                    
+                    # Column 2: Status with Color Indicators
                     if status in ["Completed", "Approved", "Submitted", "Received"]:
                         r2.success(status)
                     elif status in ["In-Progress", "Scheduled", "Ordered"]:
@@ -332,6 +334,7 @@ with tab2:
                     else:
                         r2.info(status)
                         
+                    # Column 3: Remarks (Italicized for a clean look)
                     r3.write(f"_{remark}_")
 with tab3:
     st.header("🛠️ Master Data Management")
