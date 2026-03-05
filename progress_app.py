@@ -132,7 +132,7 @@ with tab1:
                              index=customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0)
         
         # Display selected job as info
-        c2.info(f"Selected: {f_job}")
+        c2.text_input("Selected Job", value=f_job, disabled=True)
         f_eq = c3.text_input("Equipment Name", value=last_data.get('equipment', ""))
         
         c4, c5, c6 = st.columns(3)
