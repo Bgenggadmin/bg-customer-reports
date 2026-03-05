@@ -14,7 +14,7 @@ conn = st.connection("supabase", type=SupabaseConnection)
 HEADER_FIELDS = ["customer", "job_code", "equipment", "po_no", "po_date", "engineer", "po_delivery_date", "exp_dispatch_date"]
 
 MILESTONE_MAP = [
-    ("Drawing Submission", "draw_sub", "draw_sub_note"),
+    ("Drawing Submission", "draw_sub", "draw_sub_note"),F
     ("Drawing Approval", "draw_app", "draw_app_note"),
     ("RM Status", "rm_status", "rm_note"),
     ("Sub-deliveries", "sub_del", "sub_del_note"),
