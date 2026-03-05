@@ -143,7 +143,7 @@ with tab1:
         m_responses = {}
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
-            opts = ["Pending", "In-Progress", "Submitted", "Approved"] if "Drawing" in label else ["Pending", "In-Progress", "Hold", "Completed"]
+            opts = ["Pending", "In-Progress", "Submitted"] if "Drawing" in label else ["Pending", "In-Progress", "Hold", "Completed"]
             m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
