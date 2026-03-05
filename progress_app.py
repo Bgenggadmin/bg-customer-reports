@@ -205,7 +205,7 @@ with tab1:
 with tab2:
     st.subheader("📂 Report Archive")
     
-    # 1. Row for Filters - Change to 3 columns
+    # 1. Row for Filters
     filter_c1, filter_c2, filter_c3 = st.columns(3)
     
     cust_list = ["All Customers"] + customers
@@ -214,14 +214,14 @@ with tab2:
     report_type = filter_c2.selectbox("📅 Report Duration", 
                                     ["All Time", "Current Week", "Current Month", "Custom Range"])
 
-    # 2. MOVE DATE INPUT HERE (Into the 3rd column)
+    # 2. Date Input for Custom Range
     start_date, end_date = None, None
     if report_type == "Custom Range":
-        c_date = filter_c3.date_input("Select Range", [datetime.now(), datetime.now()])
+        c_date = filter_c3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
         if len(c_date) == 2:
             start_date, end_date = c_date
 
-    # 3. Base Query
+    # 3. Base Query Fetching
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
@@ -229,15 +229,14 @@ with tab2:
     res = query.execute()
     data = res.data if res else []
 
-    # 4. Apply Time Filtering Logic
+    # 4. Apply Time Filtering Logic (Python side)
+    filtered_data = []
+    today = datetime.now().date()
+    
     if data:
-        filtered_data = []
-        today = datetime.now().date()
-        
-        # (Remove the 'st.date_input' block that was originally here)
-        
         for log in data:
             try:
+                # Identify date (created_at is timestamp, po_date is date string)
                 raw_date = log.get('created_at') or log.get('po_date')
                 if not raw_date: continue
                 log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
@@ -257,7 +256,9 @@ with tab2:
                 continue
         
         data = filtered_data
-        
+
+    # 5. Display Logic
+    if data:
         # --- EXECUTIVE SUMMARY ---
         total_count = len(data)
         dispatched = sum(1 for log in data if log.get('qc_stat') == "Completed")
@@ -268,10 +269,10 @@ with tab2:
         m2.metric("Ready for Dispatch", dispatched)
         m3.metric("Currently in Fab", in_fab)
         st.divider()
-        # --- ARCHIVE LIST & ACTIONS ---
+
+        # --- ARCHIVE ACTIONS ---
         st.write(f"📊 Showing {len(data)} reports")
         
-        # Action Bar: Download Button
         st.download_button(
             label="📥 Download Filtered PDF Report",
             data=generate_pdf(data),
@@ -279,15 +280,14 @@ with tab2:
             mime="application/pdf",
             use_container_width=True
         )
-        st.ln(1) # Small gap
+        st.write("") # Spacer replacing st.ln
 
+        # --- PROJECT CARDS ---
         for log in data:
-            # Expander Label with Job & Customer
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
                 
                 # 1. VISUAL PROGRESS BAR
                 total_steps = len(MILESTONE_MAP)
-                # Count milestones that are essentially "Done"
                 done_count = sum(1 for _, s_key, _ in MILESTONE_MAP if log.get(s_key) in ["Completed", "Approved", "Submitted", "Received"])
                 progress_pct = done_count / total_steps
                 
@@ -314,16 +314,17 @@ with tab2:
                     remark = log.get(n_key) if log.get(n_key) else "Proceeding as per schedule."
                     
                     m_c1.write(f"**{label}**")
-                    # Color coding status text for readability
-                    if status in ["Completed", "Approved"]:
+                    
+                    if status in ["Completed", "Approved", "Submitted", "Received"]:
                         m_c2.success(status)
-                    elif status in ["In-Progress", "Scheduled"]:
+                    elif status in ["In-Progress", "Scheduled", "Ordered"]:
                         m_c2.warning(status)
                     else:
-                        m_c2.write(f"`{status}`")
+                        m_c2.info(status)
                         
                     m_c3.write(f"_{remark}_")
-
+    else:
+        st.info("No reports found matching the selected filters.")
 with tab3:
     st.header("🛠️ Master Data Management")
     col_cust, col_job = st.columns(2)
