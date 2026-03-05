@@ -38,15 +38,15 @@ def generate_pdf(logs):
         
         # 1. BLUE STRIP
         pdf.set_fill_color(0, 51, 102) 
-        pdf.rect(0, 0, 210, 35, 'F')
+        pdf.rect(0, 0, 210, 25, 'F')
         
         # 2. LOGO (Adjusted X, Y and Height)
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 # We move it slightly to the left (x=12) and 
-                # make it smaller (h=18) so it doesn't touch the text
-                pdf.image(BytesIO(logo_data), x=12, y=7, h=18) 
+                # make it smaller (h=15) so it doesn't touch the text
+                pdf.image(BytesIO(logo_data), x=12, y=5, h=15) 
         except Exception:
             pass
 
@@ -54,7 +54,7 @@ def generate_pdf(logs):
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
         # Shifted from 50 to 65 to clear the logo width
-        pdf.set_xy(65, 12) 
+        pdf.set_xy(65, 8) 
         pdf.cell(140, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
