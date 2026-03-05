@@ -42,7 +42,6 @@ def generate_pdf(logs):
         
         # --- LOGO LOGIC ---
         try:
-            # Direct download ensures the image data is available even if public URL fails
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=20)
@@ -51,7 +50,6 @@ def generate_pdf(logs):
 
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        # Shift text right to avoid logo
         pdf.set_xy(40, 10) 
         pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "C")
         pdf.set_font("Arial", "I", 10)
@@ -59,15 +57,12 @@ def generate_pdf(logs):
         pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "C")
         pdf.ln(15)
 
-        # 2. Job Info Header
         pdf.set_text_color(0, 0, 0)
         pdf.set_font("Arial", "B", 10)
-        # Explicitly set position to start below the blue header
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
-        # 3. Header Fields Table
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -79,7 +74,6 @@ def generate_pdf(logs):
 
         pdf.ln(5)
 
-        # 4. Milestone Table
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -100,7 +94,6 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
-        # 5. Progress Photo
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
             img_res = requests.get(img_url)
@@ -141,30 +134,24 @@ with tab1:
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
-        for label, skey, nkey in MILESTONE_MAP:
-            col_stat, col_note = st.columns([1, 2])
-st.divider()
-        st.subheader("📊 Milestone Tracking")
-        m_responses = {}
         
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
             
-# --- Logic to define specific options ---
-        if "Drawing Submission" in label:
+            # --- Logic to define specific options ---
+            if "Drawing Submission" in label:
                 opts = ["Pending", "In-Progress", "Submitted"]
-        elif "Drawing Approval" in label:
+            elif "Drawing Approval" in label:
                 opts = ["Pending", "In-Progress", "Approved"]
-        elif "RM Status" in label:
+            elif "RM Status" in label:
                 opts = ["Pending", "Ordered", "Received", "Hold"]
-        elif "Fabrication Status" in label:
+            elif "Fabrication Status" in label:
                 opts = ["Pending", "In-Progress", "Hold", "Completed"]
-        else:
-# This covers everything else (Testing, QC, FAT, etc.)
+            else:
                 opts = ["Pending", "In-Progress", "Completed"]
 
             # --- Create the UI components ---
-m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
+            m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
         if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
