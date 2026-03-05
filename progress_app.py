@@ -111,21 +111,44 @@ def generate_pdf(logs):
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
 with tab1:
+    st.subheader("📋 Select Project")
+    
+    # 1. Job selection MUST be outside the form to trigger the database lookup
+    f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
+
+    # 2. Fetch the LATEST data for this specific Job Code
+    last_data = {}
+    if f_job:
+        res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
+        last_data = res.data[0] if res.data else {}
+
+    # 3. Form starts here
     with st.form("main_entry_form", clear_on_submit=True):
         st.subheader("📋 Project Details")
+        
         c1, c2, c3 = st.columns(3)
-        f_cust = c1.selectbox("Customer", [""] + customers)
-        f_job = c2.selectbox("Job Code", [""] + jobs)
-        f_eq = c3.text_input("Equipment Name")
+        # Pre-fill Customer and Equipment based on last_data
+        f_cust = c1.selectbox("Customer", [""] + customers, 
+                             index=customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0)
+        
+        # Display selected job as info
+        c2.info(f"Selected: {f_job}")
+        f_eq = c3.text_input("Equipment Name", value=last_data.get('equipment', ""))
         
         c4, c5, c6 = st.columns(3)
-        f_po_n = c4.text_input("PO Number")
-        f_po_d = c5.date_input("PO Date")
-        f_eng = c6.text_input("Responsible Engineer")
+        f_po_n = c4.text_input("PO Number", value=last_data.get('po_no', ""))
+        
+        # Date Logic: Fallback to today if no previous record
+        prev_po_date = datetime.now()
+        if last_data.get('po_date'):
+            prev_po_date = datetime.strptime(last_data['po_date'], "%Y-%m-%d")
+            
+        f_po_d = c5.date_input("PO Date", value=prev_po_date)
+        f_eng = c6.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
         
         c7, c8 = st.columns(2)
-        f_p_del = c7.date_input("PO Delivery Date")
-        f_r_del = c8.date_input("Revised Dispatch Date")
+        f_p_del = c7.date_input("PO Delivery Date", value=datetime.strptime(last_data['po_delivery_date'], "%Y-%m-%d") if last_data.get('po_delivery_date') else datetime.now())
+        f_r_del = c8.date_input("Revised Dispatch Date", value=datetime.strptime(last_data['exp_dispatch_date'], "%Y-%m-%d") if last_data.get('exp_dispatch_date') else datetime.now())
 
         st.divider()
         st.subheader("📊 Milestone Tracking")
@@ -134,61 +157,51 @@ with tab1:
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
             
-            # --- INDEPENDENT DROPDOWN LOGIC ---
-            if label == "Drawing Submission":
-                opts = ["Pending", "In-Progress", "Submitted"]
-            elif label == "Drawing Approval":
-                opts = ["Pending", "In-Progress", "Approved"]
-            elif label == "RM Status":
-                opts = ["Pending", "Ordered", "Received", "Hold"]
-            elif label == "Sub-deliveries":
-                opts = ["Pending", "In-Progress", "Completed"]
-            elif label == "Fabrication Status":
-                opts = ["Planning", "In-Progress", "Hold", "Completed"]
-            elif label == "Buffing Status":
-                opts = ["Planning", "In-Progress", "Completed"]
-            elif label == "Testing Status":
-                opts = ["Scheduled", "In-Progress", "Completed"]
-            elif label == "Dispatch Status":
-                opts = ["Pending", "Scheduled", "In-Progress", "Completed"]
-            elif label == "FAT Status":
-                opts = ["Scheduled", "In-Progress", "Completed"]
-            else:
-                opts = ["Pending", "Scheduled", "Hold","In-Progress", "Completed"]
+            # --- DEFINE OPTIONS PER LABEL ---
+            if label == "Drawing Submission": opts = ["Pending", "In-Progress", "Submitted"]
+            elif label == "Drawing Approval": opts = ["Pending", "In-Progress", "Approved"]
+            elif label == "RM Status": opts = ["Pending", "Ordered", "Received", "Hold"]
+            elif label == "Sub-deliveries": opts = ["Pending", "In-Progress", "Completed"]
+            elif label == "Fabrication Status": opts = ["Planning", "In-Progress", "Hold", "Completed"]
+            elif label == "Buffing Status": opts = ["Planning", "In-Progress", "Completed"]
+            elif label == "Testing Status": opts = ["Scheduled", "In-Progress", "Completed"]
+            elif label == "Dispatch Status": opts = ["Pending", "Scheduled", "In-Progress", "Completed"]
+            elif label == "FAT Status": opts = ["Scheduled", "In-Progress", "Completed"]
+            else: opts = ["Pending", "Scheduled", "Hold","In-Progress", "Completed"]
 
-            # --- UI components ---
-            m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
-            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
+            # --- FORWARD-ONLY GUARD LOGIC ---
+            prev_status = last_data.get(skey, "Pending")
+            
+            # If the status was already "Submitted" or "Approved", don't allow going back to "In-Progress"
+            if prev_status in ["Submitted", "Approved", "Completed", "Received"]:
+                # Filter out the "lower" statuses
+                opts = [opt for opt in opts if opt not in ["Pending", "In-Progress", "Planning", "Ordered"]]
+                # Ensure the previous status remains in the list as the default
+                if prev_status not in opts: opts.insert(0, prev_status)
 
-        # --- PROGRESS CAPTURE MOVED TO BOTTOM ---
+            # Find index of previous status to set as default
+            default_idx = opts.index(prev_status) if prev_status in opts else 0
+            
+            m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
+            # Pre-fill previous remarks so the team doesn't have to re-type
+            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"form_{nkey}")
+
         st.divider()
         st.subheader("📸 Progress Capture")
         cam_photo = st.camera_input("Take Progress Photo")
 
-        if st.form_submit_button("🚀 SUBMIT", use_container_width=True):
+        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
             if not f_cust or not f_job:
-                st.error("Missing required data! Please ensure Customer, Job, and Photo are captured.")
+                st.error("Select a Job Code and Customer first!")
             else:
+                # Payload remains the same as your existing logic
                 entry_payload = {
                     "customer": f_cust, "job_code": f_job, "equipment": f_eq,
                     "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
                     "po_delivery_date": str(f_p_del), "exp_dispatch_date": str(f_r_del),
                     **m_responses
                 }
-                try:
-                    res = conn.table("progress_logs").insert(entry_payload).execute()
-                    if res.data:
-                        new_id = res.data[0]['id']
-                        conn.client.storage.from_("progress-photos").upload(
-                            path=f"{new_id}.jpg", file=cam_photo.getvalue(),
-                            file_options={"upsert": "true", "content-type": "image/jpeg"}
-                        )
-                        st.success(f"✅ Success! Data & Photo synced for Entry ID: {new_id}")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Sync failed: {str(e)}")
-
-# --- ADD THIS HELPER AT THE TOP OF TAB 2 ---
+                # ... [Keep your existing try/except insert logic here] ...
 with tab2:
     st.subheader("📂 Report Archive")
     
