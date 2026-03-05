@@ -37,9 +37,7 @@ def generate_pdf(logs):
         pdf.add_page()
         
         # 1. Background Blue Strip
-        pdf.set_fill_color(0, 51, 102) # Dark Blue
-        pdf.rect(0, 0, 210, 35, 'F')
-        
+                
         # 2. Logo (Wrapped in safe try/except)
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
@@ -49,7 +47,7 @@ def generate_pdf(logs):
             pass
 
         # 3. Header Text
-        pdf.set_text_color(255, 255, 255)
+        pdf.set_text_color(0, 51, 102)
         pdf.set_font("Arial", "B", 18)
         pdf.set_xy(50, 10) 
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
