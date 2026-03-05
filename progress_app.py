@@ -45,13 +45,24 @@ def generate_pdf(logs):
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-        except Exception:
-            pass
-
-        # 3. HEADER TEXT (Shifted Right)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(50, 10) 
+        # --- DIAGNOSTIC LOGO LOGIC ---
+        try:
+            # Try to download
+            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
+            if logo_data:
+                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
+            else:
+                # If data is empty but no error was thrown
+                pdf.set_xy(10, 5)
+                pdf.set_text_color(255, 0, 0)
+                pdf.set_font("Arial", "B", 8)
+                pdf.cell(40, 5, "LOGO DATA EMPTY")
+        except Exception as e:
+            # This will print the actual error on the PDF so you can see it
+            pdf.set_xy(10, 5)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_font("Arial", "", 6)
+            pdf.cell(40, 5, f"Err: {str(e)[:20]}")
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
