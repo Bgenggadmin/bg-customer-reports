@@ -166,7 +166,7 @@ with tab1:
         cam_photo = st.camera_input("Take Progress Photo")
 
         if st.form_submit_button("🚀 Final Sync to Database", use_container_width=True):
-            if not f_cust or not f_job or not cam_photo:
+            if not f_cust or not f_job:
                 st.error("Missing required data! Please ensure Customer, Job, and Photo are captured.")
             else:
                 entry_payload = {
