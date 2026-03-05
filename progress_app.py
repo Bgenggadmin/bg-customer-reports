@@ -146,9 +146,9 @@ with tab1:
             elif "RM Status" in label:
                 opts = ["Pending", "Ordered", "Received", "Hold"]
             elif "Fabrication Status" in label:
-                opts = ["Pending", "In-Progress", "Hold", "Completed"]
+                opts = ["Planning", "In-Progress", "Hold", "Completed"]
             else:
-                opts = ["Pending", "In-Progress", "Completed"]
+                opts = ["Planning", "In-Progress", "Completed"]
 
             # --- Create the UI components ---
             m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
