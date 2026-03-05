@@ -205,80 +205,69 @@ with tab1:
 with tab2:
     st.subheader("📂 Report Archive")
     
-    # 1. Row for Filters
-    filter_c1, filter_c2 = st.columns(2)
+    # 1. Row for Filters - Change to 3 columns
+    filter_c1, filter_c2, filter_c3 = st.columns(3)
     
     cust_list = ["All Customers"] + customers
     selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
     
-    # 2. NEW: Time-based Reporting Filter
     report_type = filter_c2.selectbox("📅 Report Duration", 
                                     ["All Time", "Current Week", "Current Month", "Custom Range"])
 
-    # Base Query
-    query = conn.table("progress_logs").select("*").order("id", desc=True)
+    # 2. MOVE DATE INPUT HERE (Into the 3rd column)
+    start_date, end_date = None, None
+    if report_type == "Custom Range":
+        c_date = filter_c3.date_input("Select Range", [datetime.now(), datetime.now()])
+        if len(c_date) == 2:
+            start_date, end_date = c_date
 
-    # Apply Customer Filter
+    # 3. Base Query
+    query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
     
-    # Fetch Data
     res = query.execute()
     data = res.data if res else []
 
-    # 3. Apply Time Filtering Logic (Python side)
+    # 4. Apply Time Filtering Logic
     if data:
         filtered_data = []
         today = datetime.now().date()
         
-        # Helper for Custom Range
-        start_date, end_date = None, None
-        if report_type == "Custom Range":
-            c_date = st.date_input("Select Range", [today, today])
-            if len(c_date) == 2:
-                start_date, end_date = c_date
-
+        # (Remove the 'st.date_input' block that was originally here)
+        
         for log in data:
             try:
-                # Handle different date string formats
                 raw_date = log.get('created_at') or log.get('po_date')
                 if not raw_date: continue
-                
-                # Extract only YYYY-MM-DD (first 10 chars)
                 log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
 
                 if report_type == "Current Week":
-                    # True ISO Week check (Monday to Sunday)
                     if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year:
                         filtered_data.append(log)
-                
                 elif report_type == "Current Month":
                     if log_date.month == today.month and log_date.year == today.year:
                         filtered_data.append(log)
-                
                 elif report_type == "Custom Range" and start_date and end_date:
                     if start_date <= log_date <= end_date:
                         filtered_data.append(log)
-                
                 elif report_type == "All Time":
                     filtered_data.append(log)
-            except Exception as e:
-                # Skip logs with corrupted dates so the whole app doesn't crash
+            except:
                 continue
         
         data = filtered_data
-    
-    # --- REST OF YOUR EXISTING ARCHIVE CODE ---
-    if data:
-        st.write(f"📊 Showing {len(data)} reports")
-        st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}_{report_type}.pdf")
         
-        for log in data:
-            with st.expander(f"📦 Job: {log['job_code']} | Customer: {log['customer']}"):
-                # ... [Keep all your existing t_col1, t_col2 code here] ...
-                t_col1, t_col2, t_col3, t_col4 = st.columns(4)
-                t_col1.markdown(f"**Customer**\n\n{log['customer']}")
-                # ... (rest of the archive display code remains the same)
+        # --- EXECUTIVE SUMMARY ---
+        total_count = len(data)
+        dispatched = sum(1 for log in data if log.get('qc_stat') == "Completed")
+        in_fab = sum(1 for log in data if log.get('fab_status') == "In-Progress")
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Reports", total_count)
+        m2.metric("Ready for Dispatch", dispatched)
+        m3.metric("Currently in Fab", in_fab)
+        st.divider()
 
 with tab3:
     st.header("🛠️ Master Data Management")
