@@ -37,7 +37,7 @@ def generate_pdf(logs):
         pdf.add_page()
         
         # 1. Background Blue Strip
-        pdf.set_fill_color(0, 51, 102) 
+        pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
         # 2. Logo (Wrapped in safe try/except)
