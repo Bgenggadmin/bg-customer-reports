@@ -85,7 +85,7 @@ def generate_pdf(logs):
             status = str(log.get(s_key, 'Pending'))
             if status in ["Completed", "Approved", "Submitted"]:
                 pdf.set_fill_color(144, 238, 144)
-            elif status in ["In-Progress", "Hold"]:
+            elif status in ["In-Progress", "Hold", "Ordered", "Received", "Planning"]:
                 pdf.set_fill_color(255, 255, 204)
             else:
                 pdf.set_fill_color(255, 255, 255)
@@ -138,19 +138,29 @@ with tab1:
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
             
-            # --- Logic to define specific options ---
-            if "Drawing Submission" in label:
+            # --- INDEPENDENT DROPDOWN LOGIC ---
+            if label == "Drawing Submission":
                 opts = ["Pending", "In-Progress", "Submitted"]
-            elif "Drawing Approval" in label:
+            elif label == "Drawing Approval":
                 opts = ["Pending", "In-Progress", "Approved"]
-            elif "RM Status" in label:
+            elif label == "RM Status":
                 opts = ["Pending", "Ordered", "Received", "Hold"]
-            elif "Fabrication Status" in label:
+            elif label == "Sub-deliveries":
+                opts = ["Pending", "In-Progress", "Completed"]
+            elif label == "Fabrication Status":
                 opts = ["Planning", "In-Progress", "Hold", "Completed"]
+            elif label == "Buffing Status":
+                opts = ["Pending", "In-Progress", "Completed"]
+            elif label == "Testing Status":
+                opts = ["Pending", "In-Progress", "Completed"]
+            elif label == "QC Status":
+                opts = ["Pending", "In-Progress", "Completed"]
+            elif label == "FAT Status":
+                opts = ["Pending", "In-Progress", "Completed"]
             else:
-                opts = ["Planning", "In-Progress", "Completed"]
+                opts = ["Pending", "In-Progress", "Completed"]
 
-            # --- Create the UI components ---
+            # --- UI components ---
             m_responses[skey] = col_stat.selectbox(label, opts, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", key=f"form_{nkey}")
 
@@ -177,17 +187,15 @@ with tab1:
                 except Exception as e:
                     st.error(f"Sync failed: {str(e)}")
 
+# Archive and Masters tabs remain the same as your input
 with tab2:
     st.subheader("📂 Report Archive")
     cust_list = ["All Customers"] + customers
     selected_cust = st.selectbox("🔍 Filter by Customer", cust_list)
-    
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
-    
     data = query.execute().data
-    
     if data:
         st.download_button("📥 Download Filtered PDF", generate_pdf(data), f"BG_Report_{selected_cust}.pdf")
         for log in data:
@@ -203,18 +211,15 @@ with tab2:
                 t2_col2.markdown(f"**Contract Delivery**\n\n{log['po_delivery_date']}")
                 t2_col3.markdown(f"**Exp. Dispatch**\n\n{log['exp_dispatch_date']}")
                 t2_col4.markdown(f"**Entry ID**\n\n{log['id']}")
-                
                 st.markdown("---")
                 for label, s_key, n_key in MILESTONE_MAP:
                     r1, r2, r3 = st.columns([2,1,3])
                     r1.write(f"**{label}**")
                     r2.write(f"🟢 {log[s_key]}" if log[s_key] in ["Completed", "Approved", "Submitted"] else f"🟡 {log[s_key]}")
                     r3.write(f"_{log[n_key]}_")
-                
                 st.markdown("**Progress Photo**")
                 url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
                 st.image(url, width=400)
-                
                 if st.button("🗑️ Delete", key=f"del_{log['id']}"):
                     conn.table("progress_logs").delete().eq("id", log['id']).execute()
                     try: conn.client.storage.from_("progress-photos").remove([f"{log['id']}.jpg"])
@@ -239,7 +244,6 @@ with tab3:
             if c_row2.button("🗑️", key=f"del_c_{c['id']}"):
                 conn.table("customer_master").delete().eq("id", c['id']).execute()
                 st.rerun()
-
     with col_job:
         st.subheader("🔢 Job Codes")
         with st.container(border=True):
