@@ -40,29 +40,19 @@ def generate_pdf(logs):
         pdf.set_fill_color(0, 51, 102) # Dark Blue
         pdf.rect(0, 0, 210, 35, 'F')
         
-        # 2. DRAW LOGO SECOND (On top of blue strip)
+        # 2. LOGO LOGIC (Properly wrapped try/except)
         try:
             logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
             if logo_data:
                 pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-        # --- DIAGNOSTIC LOGO LOGIC ---
-        try:
-            # Try to download
-            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
-            if logo_data:
-                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
-            else:
-                # If data is empty but no error was thrown
-                pdf.set_xy(10, 5)
-                pdf.set_text_color(255, 0, 0)
-                pdf.set_font("Arial", "B", 8)
-                pdf.cell(40, 5, "LOGO DATA EMPTY")
-        except Exception as e:
-            # This will print the actual error on the PDF so you can see it
-            pdf.set_xy(10, 5)
-            pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Arial", "", 6)
-            pdf.cell(40, 5, f"Err: {str(e)[:20]}")
+        except Exception:
+            # If logo fails, we just skip it so the PDF still generates
+            pass
+
+        # 3. HEADER TEXT
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Arial", "B", 18)
+        pdf.set_xy(50, 10) 
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
@@ -72,13 +62,13 @@ def generate_pdf(logs):
         pdf.set_text_color(0, 0, 0)
         pdf.ln(20)
 
-        # --- Job Info Header ---
+        # --- Sub-Header (Job Code) ---
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 38)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(3)
         
-        # --- Header Grid ---
+        # --- Header Grid Fields ---
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
@@ -111,6 +101,19 @@ def generate_pdf(logs):
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
+        # --- Progress Photo ---
+        try:
+            img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
+            img_res = requests.get(img_url)
+            if img_res.status_code == 200:
+                img = Image.open(BytesIO(img_res.content)).convert('RGB')
+                img.thumbnail((350, 350))
+                buf = BytesIO(); img.save(buf, format="JPEG")
+                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
+        except Exception: 
+            pass
+
+    return bytes(pdf.output())
         # --- Photo Logic ---
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
