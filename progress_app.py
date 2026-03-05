@@ -160,16 +160,16 @@ with tab1:
         
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
-            if label == "Drawing Submission": opts = ["Pending", "In-Progress", "Submitted"]
-            elif label == "Drawing Approval": opts = ["Pending", "In-Progress", "Approved"]
-            elif label == "RM Status": opts = ["Pending", "Ordered", "Received", "Hold"]
-            elif label == "Sub-deliveries": opts = ["Pending", "In-Progress", "Completed"]
+            if label == "Drawing Submission": opts = ["Pending", "NA", "In-Progress", "Submitted"]
+            elif label == "Drawing Approval": opts = ["Pending", "NA", "In-Progress", "Approved"]
+            elif label == "RM Status": opts = ["Pending", "Ordered", "In-Progress", "NA", "Received", "Hold"]
+            elif label == "Sub-deliveries": opts = ["Pending", "In-Progress", "NA", "Completed"]
             elif label == "Fabrication Status": opts = ["Planning", "In-Progress", "Hold", "Completed"]
             elif label == "Buffing Status": opts = ["Planning", "In-Progress", "Completed"]
-            elif label == "Testing Status": opts = ["Scheduled", "In-Progress", "Completed"]
+            elif label == "Testing Status": opts = ["Scheduled", "NA", "In-Progress", "Completed"]
             elif label == "Dispatch Status": opts = ["Pending", "Scheduled", "In-Progress", "Completed"]
-            elif label == "FAT Status": opts = ["Scheduled", "In-Progress", "Completed"]
-            else: opts = ["Pending", "Scheduled", "Hold","In-Progress", "Completed"]
+            elif label == "FAT Status": opts = ["Scheduled", "NA", "In-Progress", "Completed"]
+            else: opts = ["Pending", :NA", "Scheduled", "Hold","In-Progress", "Completed"]
 
             prev_status = last_data.get(skey, "Pending")
             if prev_status in ["Submitted", "Approved", "Completed", "Received"]:
