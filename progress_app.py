@@ -36,36 +36,37 @@ def generate_pdf(logs):
     for log in logs:
         pdf.add_page()
         
-        # 1. LOGO (Using Public URL for better reliability)
+        # 1. DRAW BLUE STRIP (Background)
+        pdf.set_fill_color(0, 51, 102) 
+        pdf.rect(0, 0, 210, 35, 'F')
+        
+        # 2. LOGO (Enhanced Download Logic)
         try:
-            # We try to get the public link first as it's faster for PDF generation
-            logo_url = conn.client.storage.from_("progress-photos").get_public_url("logo.png")
-            pdf.image(logo_url, x=10, y=8, h=20)
-        except Exception:
-            # Fallback to download if public URL is restricted
-            try:
-                logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
-                pdf.image(BytesIO(logo_data), x=10, y=8, h=20)
-            except:
-                pass # Skip logo if both methods fail
+            # Try downloading the logo
+            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
+            if logo_data:
+                # Use BytesIO to handle the image in memory
+                pdf.image(BytesIO(logo_data), x=10, y=5, h=25)
+        except Exception as e:
+            # If it fails, we write a small hidden note for debugging
+            pdf.set_font("Arial", "I", 6)
+            pdf.set_text_color(255, 255, 255)
+            # This prints the error message in tiny text so you can see why it's missing
+            pdf.text(10, 32, f"Logo Error: {str(e)[:40]}")
 
-        # 2. HEADER TEXT (Now in B&G Blue)
-        pdf.set_text_color(0, 51, 102) # B&G Dark Blue
+        # 3. HEADER TEXT (White on Blue)
+        pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(50, 12) 
+        pdf.set_xy(50, 10) 
         pdf.cell(150, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
         pdf.set_font("Arial", "I", 10)
         pdf.set_x(50)
         pdf.cell(150, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-        # 3. ACCENT LINE (Optional: Adds a sharp look since the strip is gone)
-        pdf.set_draw_color(0, 51, 102)
-        pdf.line(10, 35, 200, 35) 
-        
-        # Reset color to black for data
+        # Reset color to black for the rest of the report
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(18)
+        pdf.ln(20)
 
         # --- Job Header ---
         pdf.set_font("Arial", "B", 10)
