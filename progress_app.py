@@ -267,13 +267,21 @@ with tab2:
             use_container_width=True
         )
 
-        if filtered_data:
-        st.download_button(label="📥 Download Filtered PDF Report", data=generate_pdf(filtered_data), file_name=f"BG_Archive.pdf", mime="application/pdf", use_container_width=True)
+       # Line 270: The 'if' statement
+    if filtered_data:
+        # These lines are now correctly indented by 4 spaces
+        st.download_button(
+            label="📥 Download Filtered PDF Report", 
+            data=generate_pdf(filtered_data), 
+            file_name=f"BG_Archive.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
         
         for log in filtered_data:
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
                 
-                # 1. Milestone Progress Bar
+                # --- Milestone Progress Bar ---
                 total_steps = len(MILESTONE_MAP)
                 done_count = sum(1 for _, s_key, _ in MILESTONE_MAP if log.get(s_key) in ["Completed", "Approved", "Submitted", "Received"])
                 progress_pct = done_count / total_steps
@@ -282,7 +290,7 @@ with tab2:
                 col_p1.progress(progress_pct)
                 col_p2.write(f"**{int(progress_pct*100)}%**")
                 
-                # 2. Details Grid
+                # --- Details Grid ---
                 st.divider()
                 d1, d2, d3, d4 = st.columns(4)
                 d1.markdown(f"**Equipment**\n\n{log.get('equipment','-')}")
@@ -292,7 +300,7 @@ with tab2:
                 
                 st.divider()
 
-                # 3. Milestone Table
+                # --- Milestone Table ---
                 st.markdown("### 📊 Status Breakout")
                 for label, s_key, n_key in MILESTONE_MAP:
                     m_c1, m_c2, m_c3 = st.columns([1.5, 1, 2.5])
@@ -312,21 +320,23 @@ with tab2:
                         
                     m_c3.write(f"_{remark}_")
 
-                # 4. PHOTO DISPLAY BLOCK (Now correctly inside the expander)
+                # --- PHOTO DISPLAY BLOCK ---
                 st.divider()
                 st.markdown("### 📸 Progress Photo")
-                
                 try:
                     photo_name = f"{log['id']}.jpg"
                     img_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
-                    
-                    # Ping the URL to see if image exists
                     img_check = requests.head(img_url)
                     
                     if img_check.status_code == 200:
-                        st.image(img_url, caption=f"Site Capture: {log.get('job_code')}", use_container_width=True)
+                        st.image(img_url, caption=f"Capture for {log.get('job_code')}", use_container_width=True)
                     else:
                         st.info("💡 No photo uploaded for this entry.")
+                except Exception as e:
+                    st.error(f"Image Load Error: {e}")
+    # This 'else' aligns with the 'if filtered_data' at the start
+    else:
+        st.info("No records found for the selected filters."))
                 except Exception as e:
                     st.error(f"Error loading image: {e}")
 
