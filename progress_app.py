@@ -208,11 +208,10 @@ with tab1:
 # TABS 2 AND 3 REMAIN UNCHANGED BELOW...
 with tab2:
     st.subheader("📂 Report Archive")
-    # ... rest of your tab2 code ...
     filter_c1, filter_c2, filter_c3 = st.columns(3)
     cust_list = ["All Customers"] + customers
-    selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
-    report_type = filter_c2.selectbox("📅 Report Duration", ["All Time", "Current Week", "Current Month", "Custom Range"])
+    selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list, key="arch_cust_sel")
+    report_type = filter_c2.selectbox("📅 Report Duration", ["All Time", "Current Week", "Current Month", "Custom Range"], key="arch_dur_sel")
     
     start_date, end_date = None, None
     if report_type == "Custom Range":
@@ -244,13 +243,60 @@ with tab2:
                     if start_date <= log_date <= end_date: filtered_data.append(log)
                 elif report_type == "All Time": filtered_data.append(log)
             except: continue
-        data = filtered_data
+        
+        # --- CORRECTLY INDENTED DISPLAY BLOCK ---
+        if filtered_data:
+            st.download_button(label="📥 Download Filtered PDF Report", data=generate_pdf(filtered_data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
+            
+            for log in filtered_data:
+                with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
+                    st.write(f"### Status Details for Job {log.get('job_code')}")
+                    
+                    # Information Grid
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Engineer", log.get('engineer', 'N/A'))
+                    col2.metric("PO No", log.get('po_no', 'N/A'))
+                    col3.metric("Dispatch", log.get('exp_dispatch_date', 'N/A'))
 
-    if data:
-        st.download_button(label="📥 Download Filtered PDF Report", data=generate_pdf(data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
-        for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                st.write(f"Status Details for Job {log.get('job_code')}")
+                    # Milestone Status List
+                    st.markdown("---")
+                    for label, skey, nkey in MILESTONE_MAP:
+                        c_stat, c_rem = st.columns([1, 2])
+                        c_stat.write(f"**{label}:** {log.get(skey, 'Pending')}")
+                        c_rem.write(f"_{log.get(nkey, '-')}_")
+
+                    # --- PHOTO DISPLAY ---
+                    st.markdown("---")
+                    try:
+                        photo_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
+                        # Use a simple check to see if image exists
+                        check = requests.head(photo_url)
+                        if check.status_code == 200:
+                            st.image(photo_url, caption=f"Progress Photo: {log.get('job_code')}", use_container_width=True)
+                        else:
+                            st.info("No photo uploaded for this entry.")
+                    except:
+                        st.info("Photo could not be loaded.")
+        else:
+            st.warning("No records found for the selected date range.")
+
+with tab3:
+    st.header("🛠️ Master Data Management")
+    col_cust, col_job = st.columns(2)
+    with col_cust:
+        st.subheader("👥 Customers")
+        new_cust = st.text_input("New Customer Name", key="add_cust_input")
+        if st.button("➕ Add Customer", key="add_cust_btn"):
+            if new_cust:
+                conn.table("customer_master").insert({"name": new_cust}).execute()
+                st.rerun()
+    with col_job:
+        st.subheader("🔢 Job Codes")
+        new_job = st.text_input("New Job Code", key="add_job_input")
+        if st.button("➕ Add Job Code", key="add_job_btn"):
+            if new_job:
+                conn.table("job_master").insert({"job_code": new_job}).execute()
+                st.rerun()
 
 with tab3:
     st.header("🛠️ Master Data Management")
