@@ -205,52 +205,112 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-# TABS 2 AND 3 REMAIN UNCHANGED BELOW...
 with tab2:
     st.subheader("📂 Report Archive")
-    # ... rest of your tab2 code ...
+    
+    # 1. FILTERS
     filter_c1, filter_c2, filter_c3 = st.columns(3)
     cust_list = ["All Customers"] + customers
-    selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list)
-    report_type = filter_c2.selectbox("📅 Report Duration", ["All Time", "Current Week", "Current Month", "Custom Range"])
-    
+    selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list, key="arch_cust")
+    report_type = filter_c2.selectbox("📅 Report Duration", 
+                                    ["All Time", "Current Week", "Current Month", "Custom Range"], key="arch_dur")
+
     start_date, end_date = None, None
     if report_type == "Custom Range":
         c_date = filter_c3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
         if isinstance(c_date, list) and len(c_date) == 2:
             start_date, end_date = c_date
 
+    # 2. DATA FETCHING
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if selected_cust != "All Customers":
         query = query.eq("customer", selected_cust)
     
     res = query.execute()
-    data = res.data if res else []
+    raw_data = res.data if res else []
 
+    # 3. DATE FILTERING ENGINE
     filtered_data = []
     today = datetime.now().date()
     
-    if data:
-        for log in data:
-            try:
-                raw_date = log.get('created_at') or log.get('po_date')
-                if not raw_date: continue
-                log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
-                if report_type == "Current Week":
-                    if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year: filtered_data.append(log)
-                elif report_type == "Current Month":
-                    if log_date.month == today.month and log_date.year == today.year: filtered_data.append(log)
-                elif report_type == "Custom Range" and start_date and end_date:
-                    if start_date <= log_date <= end_date: filtered_data.append(log)
-                elif report_type == "All Time": filtered_data.append(log)
-            except: continue
-        data = filtered_data
+    for log in raw_data:
+        try:
+            # Check created_at timestamp or fallback to po_date
+            raw_date = log.get('created_at') or log.get('po_date')
+            if not raw_date: continue
+            
+            # Extract date portion (YYYY-MM-DD)
+            log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
 
-    if data:
-        st.download_button(label="📥 Download Filtered PDF Report", data=generate_pdf(data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
-        for log in data:
+            if report_type == "Current Week":
+                if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year:
+                    filtered_data.append(log)
+            elif report_type == "Current Month":
+                if log_date.month == today.month and log_date.year == today.year:
+                    filtered_data.append(log)
+            elif report_type == "Custom Range" and start_date and end_date:
+                if start_date <= log_date <= end_date:
+                    filtered_data.append(log)
+            else: # All Time
+                filtered_data.append(log)
+        except:
+            continue
+
+    # 4. DISPLAY ENGINE
+    if filtered_data:
+        # Global PDF Download for filtered results
+        st.download_button(
+            label="📥 Download Filtered PDF Report", 
+            data=generate_pdf(filtered_data), 
+            file_name=f"BG_Archive_Report.pdf", 
+            mime="application/pdf", 
+            use_container_width=True
+        )
+
+        for log in filtered_data:
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                st.write(f"Status Details for Job {log.get('job_code')}")
+                
+                # --- Milestone Progress Bar ---
+                total_steps = len(MILESTONE_MAP)
+                done_count = sum(1 for _, s_key, _ in MILESTONE_MAP if log.get(s_key) in ["Completed", "Approved", "Submitted", "Received"])
+                progress_pct = done_count / total_steps
+                
+                col_p1, col_p2 = st.columns([4, 1])
+                col_p1.progress(progress_pct)
+                col_p2.write(f"**{int(progress_pct*100)}%**")
+                
+                # --- Details Grid ---
+                st.divider()
+                d1, d2, d3, d4 = st.columns(4)
+                d1.markdown(f"**Equipment**\n\n{log.get('equipment','-')}")
+                d2.markdown(f"**PO Number**\n\n{log.get('po_no','-')}")
+                d3.markdown(f"**Engineer**\n\n{log.get('engineer','-')}")
+                d4.markdown(f"**Dispatch Date**\n\n{log.get('exp_dispatch_date','-')}")
+                
+                st.divider()
+
+                # --- Milestone Table ---
+                st.markdown("### 📊 Status Breakout")
+                for label, s_key, n_key in MILESTONE_MAP:
+                    m_c1, m_c2, m_c3 = st.columns([1.5, 1, 2.5])
+                    status = log.get(s_key, 'Pending')
+                    remark = log.get(n_key) or "Regular progress."
+                    
+                    m_c1.write(f"**{label}**")
+                    
+                    # UI Status Badge logic
+                    if status in ["Completed", "Approved", "Submitted", "Received"]:
+                        m_c2.success(status)
+                    elif status in ["In-Progress", "Scheduled", "Ordered"]:
+                        m_c2.warning(status)
+                    elif status == "Hold":
+                        m_c2.error(status)
+                    else:
+                        m_c2.info(status)
+                        
+                    m_c3.write(f"_{remark}_")
+    else:
+        st.info("No records found for the selected filters.")
 
 with tab3:
     st.header("🛠️ Master Data Management")
