@@ -311,6 +311,27 @@ with tab2:
                     m_c3.write(f"_{remark}_")
     else:
         st.info("No records found for the selected filters.")
+       
+        # --- PHOTO DISPLAY BLOCK ---
+                st.divider()
+                st.markdown("### 📸 Progress Photo")
+                
+                try:
+                    # Construct the filename used during upload (ID.jpg)
+                    photo_name = f"{log['id']}.jpg"
+                    
+                    # Generate the Public URL from your 'progress-photos' bucket
+                    img_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
+                    
+                    # Check if image actually exists by pinging the URL
+                    img_check = requests.head(img_url)
+                    
+                    if img_check.status_code == 200:
+                        st.image(img_url, caption=f"Site Capture for Job {log.get('job_code')}", use_container_width=True)
+                    else:
+                        st.info("💡 No photo uploaded for this entry.")
+                except Exception as e:
+                    st.error(f"Could not load image: {e}")
 
 with tab3:
     st.header("🛠️ Master Data Management")
