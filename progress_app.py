@@ -267,17 +267,34 @@ with tab2:
 
                     # --- PHOTO DISPLAY ---
                     st.markdown("---")
+                    st.markdown("### 📸 Progress Photo")
+                    
                     try:
-                        photo_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-                        # Use a simple check to see if image exists
-                        check = requests.head(photo_url)
+                        # Construct filename and get public URL
+                        photo_name = f"{log.get('id')}.jpg"
+                        photo_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
+                        
+                        # Verify image exists with a 2-second timeout to prevent lag
+                        check = requests.head(photo_url, timeout=2)
+                        
                         if check.status_code == 200:
-                            st.image(photo_url, caption=f"Progress Photo: {log.get('job_code')}", use_container_width=True)
+                            # Using columns to center the "Passport Size" photo
+                            _, center_col, _ = st.columns([1, 1, 1])
+                            with center_col:
+                                st.image(
+                                    photo_url, 
+                                    caption=f"Job: {log.get('job_code')}", 
+                                    width=160  # Fixed passport width
+                                )
                         else:
-                            st.info("No photo uploaded for this entry.")
-                    except:
-                        st.info("Photo could not be loaded.")
+                            st.info("💡 No photo uploaded for this entry.")
+                            
+                    except Exception as e:
+                        # Catching specific errors without crashing the whole Archive
+                        st.info("⚠️ Photo could not be loaded (Connection issue).")
+
         else:
+            # This aligns with the 'if filtered_data:' block
             st.warning("No records found for the selected date range.")
 
 with tab3:
