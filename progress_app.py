@@ -48,16 +48,18 @@ def generate_pdf(logs):
         except Exception:
             pass
 
-        # 3. HEADER TEXT
+       # 3. HEADER TEXT (Adjusted to prevent logo overlap)
         pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", "B", 18)
-        pdf.set_xy(65, 6) 
-        pdf.cell(140, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
+        # Main Title - Pushed to X=70 to clear the logo
+        pdf.set_font("Arial", "B", 16)
+        pdf.set_xy(70, 5) 
+        pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
+        
+        # Subtitle - Pushed to X=70 and moved down to Y=15
         pdf.set_font("Arial", "I", 10)
-        pdf.set_x(65)
-        pdf.set_y(14)
-        pdf.cell(140, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
+        pdf.set_xy(70, 14) # Changed from set_x/set_y to set_xy for precision
+        pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
         pdf.set_text_color(0, 0, 0)
 
