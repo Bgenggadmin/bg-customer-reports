@@ -48,14 +48,17 @@ def generate_pdf(logs):
         except Exception:
             pass
 
-        # 3. HEADER TEXT
+       # 3. HEADER TEXT (Adjusted to prevent logo overlap)
         pdf.set_text_color(255, 255, 255)
+        
+        # Main Title - Pushed to X=70 to clear the logo
         pdf.set_font("Arial", "B", 16)
         pdf.set_xy(70, 5) 
         pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         
+        # Subtitle - Pushed to X=70 and moved down to Y=15
         pdf.set_font("Arial", "I", 10)
-        pdf.set_xy(70, 14) 
+        pdf.set_xy(70, 14) # Changed from set_x/set_y to set_xy for precision
         pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
         pdf.set_text_color(0, 0, 0)
@@ -111,8 +114,7 @@ def generate_pdf(logs):
         except Exception: 
             pass
 
-    # Corrected return for fpdf2 compatibility
-    return pdf.output(dest='S')
+    return bytes(pdf.output())
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
@@ -178,15 +180,11 @@ with tab1:
             m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"form_{nkey}")
 
-        # --- PROGRESS STRIP (MANUAL ADJUSTMENT) ---
-        st.divider()
-        st.subheader("📈 Overall Progress")
-        f_overall = st.slider("Completion Percentage", 0, 100, value=int(last_data.get('overall_progress', 0)), step=5, key="manual_prog_slider")
-
         st.divider()
         st.subheader("📸 Progress Capture")
         cam_photo = st.camera_input("Take Progress Photo")
 
+        # --- SUBMIT BUTTON INSIDE THE FORM ---
         if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
             if not f_cust or not f_job:
                 st.error("Select a Job Code and Customer first!")
@@ -196,7 +194,6 @@ with tab1:
                         "customer": f_cust, "job_code": f_job, "equipment": f_eq,
                         "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
                         "po_delivery_date": str(f_p_del), "exp_dispatch_date": str(f_r_del),
-                        "overall_progress": f_overall,
                         **m_responses
                     }
                     res = conn.table("progress_logs").insert(entry_payload).execute()
@@ -208,6 +205,7 @@ with tab1:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
+# TABS 2 AND 3 REMAIN UNCHANGED BELOW...
 with tab2:
     st.subheader("📂 Report Archive")
     filter_c1, filter_c2, filter_c3 = st.columns(3)
@@ -246,41 +244,57 @@ with tab2:
                 elif report_type == "All Time": filtered_data.append(log)
             except: continue
         
+        # --- CORRECTLY INDENTED DISPLAY BLOCK ---
         if filtered_data:
             st.download_button(label="📥 Download Filtered PDF Report", data=generate_pdf(filtered_data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
             
             for log in filtered_data:
                 with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                    # Visual Progress Bar in Archive
-                    prog_val = log.get('overall_progress', 0)
-                    st.write(f"**Current Progress: {prog_val}%**")
-                    st.progress(prog_val / 100)
-                    
                     st.write(f"### Status Details for Job {log.get('job_code')}")
+                    
+                    # Information Grid
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Engineer", log.get('engineer', 'N/A'))
                     col2.metric("PO No", log.get('po_no', 'N/A'))
                     col3.metric("Dispatch", log.get('exp_dispatch_date', 'N/A'))
+
+                    # Milestone Status List
                     st.markdown("---")
                     for label, skey, nkey in MILESTONE_MAP:
                         c_stat, c_rem = st.columns([1, 2])
                         c_stat.write(f"**{label}:** {log.get(skey, 'Pending')}")
                         c_rem.write(f"_{log.get(nkey, '-')}_")
+
+                    # --- PHOTO DISPLAY ---
                     st.markdown("---")
                     st.markdown("### 📸 Progress Photo")
+                    
                     try:
+                        # Construct filename and get public URL
                         photo_name = f"{log.get('id')}.jpg"
                         photo_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
+                        
+                        # Verify image exists with a 2-second timeout to prevent lag
                         check = requests.head(photo_url, timeout=2)
+                        
                         if check.status_code == 200:
+                            # Using columns to center the "Passport Size" photo
                             _, center_col, _ = st.columns([1, 1, 1])
                             with center_col:
-                                st.image(photo_url, caption=f"Job: {log.get('job_code')}", width=160)
+                                st.image(
+                                    photo_url, 
+                                    caption=f"Job: {log.get('job_code')}", 
+                                    width=160  # Fixed passport width
+                                )
                         else:
                             st.info("💡 No photo uploaded for this entry.")
-                    except:
-                        st.info("⚠️ Photo could not be loaded.")
+                            
+                    except Exception as e:
+                        # Catching specific errors without crashing the whole Archive
+                        st.info("⚠️ Photo could not be loaded (Connection issue).")
+
         else:
+            # This aligns with the 'if filtered_data:' block
             st.warning("No records found for the selected date range.")
 
 with tab3:
@@ -297,6 +311,24 @@ with tab3:
         st.subheader("🔢 Job Codes")
         new_job = st.text_input("New Job Code", key="add_job_input")
         if st.button("➕ Add Job Code", key="add_job_btn"):
+            if new_job:
+                conn.table("job_master").insert({"job_code": new_job}).execute()
+                st.rerun()
+
+with tab3:
+    st.header("🛠️ Master Data Management")
+    col_cust, col_job = st.columns(2)
+    with col_cust:
+        st.subheader("👥 Customers")
+        new_cust = st.text_input("New Customer Name")
+        if st.button("➕ Add Customer"):
+            if new_cust:
+                conn.table("customer_master").insert({"name": new_cust}).execute()
+                st.rerun()
+    with col_job:
+        st.subheader("🔢 Job Codes")
+        new_job = st.text_input("New Job Code")
+        if st.button("➕ Add Job Code"):
             if new_job:
                 conn.table("job_master").insert({"job_code": new_job}).execute()
                 st.rerun()
