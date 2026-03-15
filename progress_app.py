@@ -27,11 +27,10 @@ MILESTONE_MAP = [
     ("FAT Status", "fat_stat", "fat_note")
 ]
 
-# --- PDF ENGINE (FIXED ATTRIBUTE ERROR) ---
+# --- PDF ENGINE ---
 def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
     logo_path = None
     try:
         logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
@@ -43,21 +42,18 @@ def generate_pdf(logs):
 
     for log in logs:
         pdf.add_page()
-        # 1. Header
         pdf.set_fill_color(0, 51, 102); pdf.rect(0, 0, 210, 25, 'F')
         if logo_path: pdf.image(logo_path, x=12, y=5, h=15)
         pdf.set_text_color(255, 255, 255); pdf.set_font("Arial", "B", 16)
         pdf.set_xy(70, 5); pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         pdf.set_font("Arial", "I", 10); pdf.set_xy(70, 14); pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-        # 2. Field Grid
         pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "B", 10); pdf.set_xy(10, 30)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(2); pdf.set_font("Arial", "B", 8); pdf.set_fill_color(240, 240, 240)
         
         for i in range(0, len(HEADER_FIELDS), 2):
-            f1 = HEADER_FIELDS[i]
-            f2 = HEADER_FIELDS[i+1] if i+1 < len(HEADER_FIELDS) else None
+            f1 = HEADER_FIELDS[i]; f2 = HEADER_FIELDS[i+1] if i+1 < len(HEADER_FIELDS) else None
             pdf.cell(30, 7, f" {f1.replace('_',' ').title()}", 1, 0, 'L', True)
             pdf.cell(65, 7, f" {str(log.get(f1,''))}", 1, 0, 'L')
             if f2:
@@ -65,7 +61,6 @@ def generate_pdf(logs):
                 pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
             else: pdf.ln(7)
 
-        # 3. Table
         pdf.ln(5); pdf.set_font("Arial", "B", 9); pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
         pdf.cell(35, 8, " Status", 1, 0, 'C', True)
@@ -73,16 +68,14 @@ def generate_pdf(logs):
         
         pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "", 8)
         for label, s_key, n_key in MILESTONE_MAP:
-            status = str(log.get(s_key, 'Pending'))
             pdf.cell(60, 7, f" {label}", 1)
-            pdf.cell(35, 7, f" {status}", 1, 0, 'C')
+            pdf.cell(35, 7, f" {str(log.get(s_key, 'Pending'))}", 1, 0, 'C')
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
-    # FIX: Clean output handling for FPDF2
     if logo_path: os.unlink(logo_path)
-    return bytes(pdf.output()) # Simplified for compatibility
+    return bytes(pdf.output())
 
-# --- MASTER DATA FETCH ---
+# --- DATA FETCH ---
 @st.cache_data(ttl=600)
 def get_master_data():
     try:
@@ -95,90 +88,97 @@ customers, jobs = get_master_data()
 
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
+# --- TAB 1: NEW ENTRY ---
 with tab1:
+    st.subheader("📋 Project Update")
     f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
     last_data = {}
     if f_job:
         res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
         if res and res.data: last_data = res.data[0]
 
-    with st.form("main_form"):
-        # ... [Keep your existing Tab 1 Form Fields here] ...
-        st.subheader("📋 Project Details")
+    with st.form("main_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         f_cust = c1.selectbox("Customer", [""] + customers, index=customers.index(last_data['customer'])+1 if last_data.get('customer') in customers else 0)
         f_eq = c2.text_input("Equipment", value=last_data.get('equipment', ""))
         
-        # New Progress Bar Input for Tab 1
         st.divider()
+        st.subheader("📊 Milestone Tracking")
         m_responses = {}
         for label, skey, nkey in MILESTONE_MAP:
             pk = f"{skey}_prog"
-            col1, col2, col3 = st.columns([2, 1, 2])
-            m_responses[skey] = col1.selectbox(label, ["Pending", "In-Progress", "Completed", "NA"], key=f"s_{skey}")
-            m_responses[pk] = col2.number_input("%", 0, 100, value=int(last_data.get(pk, 0)), key=f"p_{skey}")
-            m_responses[nkey] = col3.text_input("Note", value=last_data.get(nkey, ""), key=f"n_{skey}")
+            col1, col2, col3 = st.columns([1.5, 1, 2])
+            
+            opts = ["Pending", "In-Progress", "Completed", "NA", "Hold", "Approved"]
+            prev_status = last_data.get(skey, "Pending")
+            m_responses[skey] = col1.selectbox(label, opts, index=opts.index(prev_status) if prev_status in opts else 0, key=f"s_{skey}")
+            
+            # Use Slider for Progress % (Old Logic restored)
+            m_responses[pk] = col2.slider("Prog %", 0, 100, value=int(last_data.get(pk, 0)), key=f"p_{skey}")
+            m_responses[nkey] = col3.text_input("Remarks", value=last_data.get(nkey, ""), key=f"n_{skey}")
 
-        if st.form_submit_button("🚀 SUBMIT"):
-            payload = {"customer": f_cust, "job_code": f_job, "equipment": f_eq, **m_responses}
+        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
+            avg_p = sum([m_responses[f"{m[1]}_prog"] for m in MILESTONE_MAP]) // len(MILESTONE_MAP)
+            payload = {"customer": f_cust, "job_code": f_job, "equipment": f_eq, "overall_progress": avg_p, **m_responses}
             conn.table("progress_logs").insert(payload).execute()
+            st.success(f"✅ Saved! Total Progress: {avg_p}%")
             st.cache_data.clear(); st.rerun()
 
+# --- TAB 2: ARCHIVE (FIXED STATUS BARS) ---
 with tab2:
-    st.subheader("📂 Filtered Archive")
-    f1, f2, f3 = st.columns(3)
-    sel_c = f1.selectbox("Customer", ["All"] + customers)
-    dur = f2.selectbox("Duration", ["All Time", "Current Month", "Custom Range"])
+    st.subheader("📂 Report Archive")
+    f1, f2 = st.columns(2)
+    sel_c = f1.selectbox("Filter by Customer", ["All"] + customers)
     
-    # Query logic
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if sel_c != "All": query = query.eq("customer", sel_c)
-    
     res = query.execute()
-    filtered_data = res.data if res else []
+    data = res.data if res else []
     
-    if filtered_data:
-        # Action Buttons
-        pdf_bytes = generate_pdf(filtered_data)
-        st.download_button("📥 Download PDF Report", data=pdf_bytes, file_name="BG_Archive.pdf", mime="application/pdf")
+    if data:
+        st.download_button("📥 Download PDF", data=generate_pdf(data), file_name="BG_Archive.pdf", mime="application/pdf")
         
-        for log in filtered_data:
+        for log in data:
             with st.expander(f"📦 {log.get('job_code')} - {log.get('customer')}"):
-                # Progress Bar rendering
-                ov_p = sum([int(log.get(f"{m[1]}_prog", 0)) for m in MILESTONE_MAP]) // len(MILESTONE_MAP)
-                st.write(f"**Overall: {ov_p}%**")
-                st.progress(ov_p / 100)
-                
-                # Detailed Grid
-                for label, skey, nkey in MILESTONE_MAP:
-                    col_a, col_b = st.columns([1, 2])
-                    col_a.write(f"**{label}**: {log.get(skey)}")
-                    col_b.write(f"_{log.get(nkey, '-')}_")
+                # Total Project Bar
+                ov_p = int(log.get('overall_progress', 0))
+                st.write(f"**Total Completion: {ov_p}%**")
+                st.progress(min(max(ov_p / 100.0, 0.0), 1.0))
+                st.divider()
 
-with tab3:
-    # ... [Keep your existing Tab 3 Master Data Management here] ...
-    st.write("Manage Customers and Jobs here.")
-# --- TAB 3: MASTERS (The Missing Tab) ---
+                # RESTORED OLD LOGIC: Individual milestone bars
+                for label, skey, nkey in MILESTONE_MAP:
+                    pk = f"{skey}_prog"
+                    c_status, c_bar, c_note = st.columns([1.5, 1, 1.5])
+                    
+                    # Data fetching
+                    m_status = log.get(skey, "Pending")
+                    m_prog = int(log.get(pk, 0))
+                    m_note = log.get(nkey, "-")
+                    
+                    c_status.write(f"**{label}**")
+                    c_status.caption(f"Status: {m_status}")
+                    
+                    with c_bar:
+                        st.progress(m_prog / 100.0)
+                        st.caption(f"Progress: {m_prog}%")
+                        
+                    c_note.write(f"_{m_note}_")
+                    st.write("") # Spacer
+
+# --- TAB 3: MASTERS ---
 with tab3:
     st.subheader("🛠️ Master Management")
     col1, col2 = st.columns(2)
-    
     with col1:
-        st.markdown("### 🏢 Add New Customer")
-        with st.form("add_customer", clear_on_submit=True):
-            new_cust = st.text_input("Customer Name")
+        with st.form("add_cust"):
+            new_c = st.text_input("Customer Name")
             if st.form_submit_button("Add Customer"):
-                if new_cust:
-                    conn.table("customer_master").insert({"name": new_cust}).execute()
-                    st.success(f"Added {new_cust}"); st.cache_data.clear(); st.rerun()
-                else: st.error("Name cannot be empty")
-
+                conn.table("customer_master").insert({"name": new_c}).execute()
+                st.cache_data.clear(); st.rerun()
     with col2:
-        st.markdown("### 🔢 Add New Job Code")
-        with st.form("add_job", clear_on_submit=True):
-            new_job = st.text_input("Job Code")
+        with st.form("add_job"):
+            new_j = st.text_input("Job Code")
             if st.form_submit_button("Add Job"):
-                if new_job:
-                    conn.table("job_master").insert({"job_code": new_job}).execute()
-                    st.success(f"Added {new_job}"); st.cache_data.clear(); st.rerun()
-                else: st.error("Job Code cannot be empty")
+                conn.table("job_master").insert({"job_code": new_j}).execute()
+                st.cache_data.clear(); st.rerun()
