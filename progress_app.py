@@ -81,104 +81,137 @@ def get_master_data():
     try:
         c_res = conn.table("customer_master").select("name").execute()
         j_res = conn.table("job_master").select("job_code").execute()
-        return [d['name'] for d in c_res.data], [d['job_code'] for d in j_res.data]
+        return sorted([d['name'] for d in c_res.data]), sorted([d['job_code'] for d in j_res.data])
     except: return [], []
 
 customers, jobs = get_master_data()
 
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
-# --- TAB 1: NEW ENTRY ---
+# --- TAB 1: NEW ENTRY (WITH FULL FETCHING) ---
 with tab1:
-    st.subheader("📋 Project Update")
+    st.subheader("📋 Select Project")
     f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
     last_data = {}
     if f_job:
         res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
-        if res and res.data: last_data = res.data[0]
+        if res and res.data: 
+            last_data = res.data[0]
+            st.toast(f"Fetched last data for {f_job}")
 
     with st.form("main_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         f_cust = c1.selectbox("Customer", [""] + customers, index=customers.index(last_data['customer'])+1 if last_data.get('customer') in customers else 0)
-        f_eq = c2.text_input("Equipment", value=last_data.get('equipment', ""))
+        c2.text_input("Selected Job", value=f_job, disabled=True)
+        f_eq = c3.text_input("Equipment", value=last_data.get('equipment', ""))
         
+        c4, c5, c6 = st.columns(3)
+        f_po_n = c4.text_input("PO Number", value=last_data.get('po_no', ""))
+        
+        def safe_date(field):
+            val = last_data.get(field)
+            try: return datetime.strptime(val, "%Y-%m-%d") if val else datetime.now()
+            except: return datetime.now()
+
+        f_po_d = c5.date_input("PO Date", value=safe_date('po_date'))
+        f_eng = c6.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
+        
+        c7, c8 = st.columns(2)
+        f_p_del = c7.date_input("PO Delivery Date", value=safe_date('po_delivery_date'))
+        f_r_del = c8.date_input("Revised Dispatch Date", value=safe_date('exp_dispatch_date'))
+
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         for label, skey, nkey in MILESTONE_MAP:
             pk = f"{skey}_prog"
             col1, col2, col3 = st.columns([1.5, 1, 2])
-            
-            opts = ["Pending", "In-Progress", "Completed", "NA", "Hold", "Approved"]
+            opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
             prev_status = last_data.get(skey, "Pending")
             m_responses[skey] = col1.selectbox(label, opts, index=opts.index(prev_status) if prev_status in opts else 0, key=f"s_{skey}")
-            
-            # Use Slider for Progress % (Old Logic restored)
             m_responses[pk] = col2.slider("Prog %", 0, 100, value=int(last_data.get(pk, 0)), key=f"p_{skey}")
             m_responses[nkey] = col3.text_input("Remarks", value=last_data.get(nkey, ""), key=f"n_{skey}")
 
-        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
-            avg_p = sum([m_responses[f"{m[1]}_prog"] for m in MILESTONE_MAP]) // len(MILESTONE_MAP)
-            payload = {"customer": f_cust, "job_code": f_job, "equipment": f_eq, "overall_progress": avg_p, **m_responses}
-            conn.table("progress_logs").insert(payload).execute()
-            st.success(f"✅ Saved! Total Progress: {avg_p}%")
-            st.cache_data.clear(); st.rerun()
+        st.divider()
+        f_progress = st.slider("📈 Overall Completion %", 0, 100, value=int(last_data.get('overall_progress') or 0))
+        cam_photo = st.camera_input("📸 Take Progress Photo")
 
-# --- TAB 2: ARCHIVE (FIXED STATUS BARS) ---
+        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
+            payload = {
+                "customer": f_cust, "job_code": f_job, "equipment": f_eq,
+                "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
+                "po_delivery_date": str(f_p_del), "exp_dispatch_date": str(f_r_del),
+                "overall_progress": f_progress, **m_responses
+            }
+            res = conn.table("progress_logs").insert(payload).execute()
+            if cam_photo and res.data:
+                conn.client.storage.from_("progress-photos").upload(f"{res.data[0]['id']}.jpg", cam_photo.getvalue())
+            st.success("✅ Saved!"); st.cache_data.clear(); st.rerun()
+
+# --- TAB 2: ARCHIVE (RESTORED FILTERS & STATUS BARS) ---
 with tab2:
     st.subheader("📂 Report Archive")
-    f1, f2 = st.columns(2)
-    sel_c = f1.selectbox("Filter by Customer", ["All"] + customers)
+    f1, f2, f3 = st.columns(3)
+    sel_c = f1.selectbox("Filter Customer", ["All"] + customers)
+    report_type = f2.selectbox("📅 Report Duration", ["All Time", "Current Week", "Current Month", "Custom Range"])
     
+    start_date, end_date = None, None
+    if report_type == "Custom Range":
+        c_date = f3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
+        if isinstance(c_date, list) and len(c_date) == 2: start_date, end_date = c_date
+
     query = conn.table("progress_logs").select("*").order("id", desc=True)
     if sel_c != "All": query = query.eq("customer", sel_c)
     res = query.execute()
     data = res.data if res else []
     
-    if data:
-        st.download_button("📥 Download PDF", data=generate_pdf(data), file_name="BG_Archive.pdf", mime="application/pdf")
-        
-        for log in data:
-            with st.expander(f"📦 {log.get('job_code')} - {log.get('customer')}"):
-                # Total Project Bar
-                ov_p = int(log.get('overall_progress', 0))
-                st.write(f"**Total Completion: {ov_p}%**")
-                st.progress(min(max(ov_p / 100.0, 0.0), 1.0))
-                st.divider()
+    today = datetime.now().date()
+    filtered_data = []
+    for log in data:
+        try:
+            raw_date = log.get('created_at') or log.get('po_date')
+            log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+            if report_type == "Current Week" and log_date.isocalendar()[1] != today.isocalendar()[1]: continue
+            if report_type == "Current Month" and log_date.month != today.month: continue
+            if report_type == "Custom Range" and not (start_date <= log_date <= end_date): continue
+            filtered_data.append(log)
+        except: continue
 
-                # RESTORED OLD LOGIC: Individual milestone bars
+    if filtered_data:
+        st.download_button("📥 Download PDF Report", data=generate_pdf(filtered_data), file_name="BG_Archive.pdf", mime="application/pdf", use_container_width=True)
+        
+        for log in filtered_data:
+            with st.expander(f"📦 {log.get('job_code')} - {log.get('customer')}"):
+                ov_p = int(log.get('overall_progress', 0))
+                st.write(f"**Overall Progress: {ov_p}%**")
+                st.progress(ov_p / 100)
+                
+                # Restore the 3-column milestone view with bars
                 for label, skey, nkey in MILESTONE_MAP:
                     pk = f"{skey}_prog"
                     c_status, c_bar, c_note = st.columns([1.5, 1, 1.5])
-                    
-                    # Data fetching
-                    m_status = log.get(skey, "Pending")
                     m_prog = int(log.get(pk, 0))
-                    m_note = log.get(nkey, "-")
-                    
                     c_status.write(f"**{label}**")
-                    c_status.caption(f"Status: {m_status}")
-                    
+                    c_status.caption(f"Status: {log.get(skey, 'Pending')}")
                     with c_bar:
                         st.progress(m_prog / 100.0)
-                        st.caption(f"Progress: {m_prog}%")
-                        
-                    c_note.write(f"_{m_note}_")
-                    st.write("") # Spacer
+                        st.caption(f"{m_prog}%")
+                    c_note.write(f"_{log.get(nkey, '-')}_")
+                
+                photo_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log.get('id')}.jpg")
+                st.image(photo_url, width=200, caption="Update Photo")
 
 # --- TAB 3: MASTERS ---
 with tab3:
-    st.subheader("🛠️ Master Management")
-    col1, col2 = st.columns(2)
-    with col1:
-        with st.form("add_cust"):
-            new_c = st.text_input("Customer Name")
-            if st.form_submit_button("Add Customer"):
-                conn.table("customer_master").insert({"name": new_c}).execute()
-                st.cache_data.clear(); st.rerun()
-    with col2:
-        with st.form("add_job"):
-            new_j = st.text_input("Job Code")
-            if st.form_submit_button("Add Job"):
-                conn.table("job_master").insert({"job_code": new_j}).execute()
-                st.cache_data.clear(); st.rerun()
+    st.subheader("🛠️ Management")
+    c1, c2 = st.columns(2)
+    with c1:
+        new_c = st.text_input("New Customer")
+        if st.button("Add Customer"):
+            conn.table("customer_master").insert({"name": new_c}).execute()
+            st.cache_data.clear(); st.rerun()
+    with c2:
+        new_j = st.text_input("New Job Code")
+        if st.button("Add Job"):
+            conn.table("job_master").insert({"job_code": new_j}).execute()
+            st.cache_data.clear(); st.rerun()
