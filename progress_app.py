@@ -202,10 +202,8 @@ with tab1:
             m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"{f_job}_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"{f_job}_{nkey}")
 
-        st.divider()
-        st.subheader("📈 Overall Progress")
-        f_progress = st.slider("Completion %", 0, 100, value=int(last_data.get('overall_progress') or 0))
-
+        # Removed here overall progress
+        
         st.divider()
         st.subheader("📸 Progress Capture")
         cam_photo = st.camera_input("Take Progress Photo")
