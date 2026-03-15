@@ -210,31 +210,63 @@ with tab2:
     selected_cust = filter_c1.selectbox("🔍 Filter by Customer", cust_list, key="arch_cust_sel")
     report_type = filter_c2.selectbox("📅 Report Duration", ["All Time", "Current Week", "Current Month", "Custom Range"], key="arch_dur_sel")
     
+    start_date, end_date = None, None
+    if report_type == "Custom Range":
+        c_date = filter_c3.date_input("Select Range", [datetime.now().date(), datetime.now().date()])
+        if isinstance(c_date, list) and len(c_date) == 2:
+            start_date, end_date = c_date
+
     query = conn.table("progress_logs").select("*").order("id", desc=True)
-    if selected_cust != "All Customers": query = query.eq("customer", selected_cust)
+    if selected_cust != "All Customers":
+        query = query.eq("customer", selected_cust)
+    
     res = query.execute()
     data = res.data if res else []
+
+    filtered_data = []
+    today = datetime.now().date()
     
     if data:
-        # FIXED: Corrected the data parameter to call generate_pdf
-        st.download_button(label="📥 Download PDF Report", data=generate_pdf(data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
         for log in data:
-            with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                prog_val = log.get('overall_progress') or 0
-                st.write(f"**Overall Progress: {prog_val}%**")
-                st.progress(int(prog_val) / 100)
-                
-                st.write(f"### Status Details for Job {log.get('job_code')}")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Engineer", log.get('engineer', 'N/A'))
-                col2.metric("PO No", log.get('po_no', 'N/A'))
-                col3.metric("Dispatch", log.get('exp_dispatch_date', 'N/A'))
-                
-                st.markdown("---")
-                for label, skey, nkey in MILESTONE_MAP:
-                    c_stat, c_rem = st.columns([1, 2])
-                    c_stat.write(f"**{label}:** {log.get(skey, 'Pending')}")
-                    c_rem.write(f"_{log.get(nkey, '-')}_")
+            try:
+                raw_date = log.get('created_at') or log.get('po_date')
+                if not raw_date: continue
+                log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
+                if report_type == "Current Week":
+                    if log_date.isocalendar()[1] == today.isocalendar()[1] and log_date.year == today.year: filtered_data.append(log)
+                elif report_type == "Current Month":
+                    if log_date.month == today.month and log_date.year == today.year: filtered_data.append(log)
+                elif report_type == "Custom Range" and start_date and end_date:
+                    if start_date <= log_date <= end_date: filtered_data.append(log)
+                elif report_type == "All Time": filtered_data.append(log)
+            except: continue
+        
+        if filtered_data:
+            with st.spinner("🛠️ Generating Report..."):
+                pdf_data = generate_pdf(filtered_data)
+                st.download_button(label="📥 Download Filtered PDF Report", data=pdf_data, file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
+            
+            for log in filtered_data:
+                with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
+                    p_val = int(log.get('overall_progress') or 0)
+                    st.write(f"**Overall Progress: {p_val}%**")
+                    st.progress(p_val / 100)
+                    st.write(f"### Status Details for Job {log.get('job_code')}")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Engineer", log.get('engineer', 'N/A'))
+                    c2.metric("PO No", log.get('po_no', 'N/A'))
+                    c3.metric("Dispatch", log.get('exp_dispatch_date', 'N/A'))
+                    st.markdown("---")
+                    for label, skey, nkey in MILESTONE_MAP:
+                        cs, cr = st.columns([1, 2])
+                        cs.write(f"**{label}:** {log.get(skey, 'Pending')}")
+                        cr.write(f"_{log.get(nkey, '-')}_")
+                    
+                    photo_name = f"{log.get('id')}.jpg"
+                    photo_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
+                    st.image(photo_url, caption=f"Job: {log.get('job_code')}", width=160)
+        else:
+            st.warning("No records found.")
 
 with tab3:
     st.header("🛠️ Master Data Management")
