@@ -143,7 +143,7 @@ def generate_pdf(logs):
     if logo_path:
         os.unlink(logo_path) # Clean up logo temp file
         
-    return pdf.output(dest='S').encode('latin-1', 'replace')
+    return pdf.output(dest='S')
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
