@@ -50,7 +50,7 @@ def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # Handle Logo via Temp File to bypass FPDF AttributeError
+    # Handle Logo via Temp File
     logo_path = None
     try:
         logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
@@ -136,14 +136,18 @@ def generate_pdf(logs):
                     img.save(tmp_img.name, format="JPEG", quality=75)
                     pdf.image(tmp_img.name, x=75, y=pdf.get_y()+10, w=60)
                     tmp_img_name = tmp_img.name
-                os.unlink(tmp_img_name) # Clean up photo temp file
+                os.unlink(tmp_img_name) 
         except: 
             pass
 
     if logo_path:
-        os.unlink(logo_path) # Clean up logo temp file
-        
-    return pdf.output(dest='S')
+        os.unlink(logo_path) 
+    
+    # --- CROSS-VERSION STABILITY FIX ---
+    output = pdf.output(dest='S')
+    if isinstance(output, str):
+        return output.encode('latin-1', 'replace')
+    return bytes(output)
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
