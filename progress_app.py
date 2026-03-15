@@ -10,6 +10,8 @@ import os
 
 # 1. SETUP
 st.set_page_config(page_title="B&G Hub 2.0", layout="wide")
+
+# Set TTL globally to keep data fresh
 conn = st.connection("supabase", type=SupabaseConnection, ttl=60)
 
 # 2. THE MASTER MAPPING
@@ -28,7 +30,7 @@ MILESTONE_MAP = [
 ]
 
 # --- DATA FETCHING ---
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=600)
 def get_master_data():
     try:
         c_res = conn.table("customer_master").select("name").execute()
@@ -44,25 +46,31 @@ def get_master_data():
 customers, jobs = get_master_data()
 
 # --- PDF ENGINE ---
-def generate_pdf(logs): # FIXED: Added function name
+def generate_pdf(logs):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Handle Logo via Temp File to bypass FPDF AttributeError
+    logo_path = None
+    try:
+        logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
+        if logo_data:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_logo:
+                tmp_logo.write(logo_data)
+                logo_path = tmp_logo.name
+    except:
+        pass
+
     for log in logs:
         pdf.add_page()
         
-        # 1. BLUE STRIP
+        # 1. Blue Header Strip
         pdf.set_fill_color(0, 51, 102) 
         pdf.rect(0, 0, 210, 25, 'F')
         
-        # 2. LOGO
-        try:
-            logo_data = conn.client.storage.from_("progress-photos").download("logo.png")
-            if logo_data:
-                pdf.image(BytesIO(logo_data), x=12, y=5, h=15) 
-        except Exception:
-            pass
+        if logo_path:
+            pdf.image(logo_path, x=12, y=5, h=15)
 
-        # 3. HEADER TEXT
         pdf.set_text_color(255, 255, 255)
         pdf.set_font("Arial", "B", 16)
         pdf.set_xy(70, 5) 
@@ -71,28 +79,31 @@ def generate_pdf(logs): # FIXED: Added function name
         pdf.set_font("Arial", "I", 10)
         pdf.set_xy(70, 14) 
         pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
-        
         pdf.set_text_color(0, 0, 0)
 
-        # --- Job Header ---
+        # 2. Job Header
         pdf.set_font("Arial", "B", 10)
         pdf.set_xy(10, 30)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(2)
         
-        # --- Field Grid ---
+        # 3. Field Grid
         pdf.set_font("Arial", "B", 8)
         pdf.set_fill_color(240, 240, 240)
         for i in range(0, len(HEADER_FIELDS), 2):
-            f1, f2 = HEADER_FIELDS[i], HEADER_FIELDS[i+1]
+            f1 = HEADER_FIELDS[i]
+            f2 = HEADER_FIELDS[i+1] if i+1 < len(HEADER_FIELDS) else None
             pdf.cell(30, 7, f" {f1.replace('_',' ').title()}", 1, 0, 'L', True)
             pdf.cell(65, 7, f" {str(log.get(f1,''))}", 1, 0, 'L')
-            pdf.cell(30, 7, f" {f2.replace('_',' ').title()}", 1, 0, 'L', True)
-            pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
+            if f2:
+                pdf.cell(30, 7, f" {f2.replace('_',' ').title()}", 1, 0, 'L', True)
+                pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
+            else:
+                pdf.ln(7)
 
         pdf.ln(5)
 
-        # --- Milestone Table ---
+        # 4. Milestone Table
         pdf.set_font("Arial", "B", 9)
         pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(60, 8, " Milestone Item", 1, 0, 'L', True)
@@ -113,20 +124,26 @@ def generate_pdf(logs): # FIXED: Added function name
             pdf.cell(35, 7, f" {status}", 1, 0, 'C', True)
             pdf.cell(95, 7, f" {str(log.get(n_key,'-'))}", 1, 1)
 
-        # --- Progress Photo ---
+        # 5. Progress Photo via Temp File
         try:
             img_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log['id']}.jpg")
-            img_res = requests.get(img_url)
+            img_res = requests.get(img_url, timeout=5)
             if img_res.status_code == 200:
                 img = Image.open(BytesIO(img_res.content)).convert('RGB')
-                img.thumbnail((350, 350))
-                buf = BytesIO(); img.save(buf, format="JPEG")
-                pdf.image(buf, x=75, y=pdf.get_y()+10, w=60)
-        except Exception: 
+                img.thumbnail((300, 300))
+                
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
+                    img.save(tmp_img.name, format="JPEG", quality=75)
+                    pdf.image(tmp_img.name, x=75, y=pdf.get_y()+10, w=60)
+                    tmp_img_name = tmp_img.name
+                os.unlink(tmp_img_name) # Clean up photo temp file
+        except: 
             pass
 
-    # FIXED: Added bytes() wrapper for Streamlit compatibility
-    return bytes(pdf.output(dest='S'))
+    if logo_path:
+        os.unlink(logo_path) # Clean up logo temp file
+        
+    return pdf.output(dest='S').encode('latin-1', 'replace')
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
@@ -280,16 +297,16 @@ with tab3:
     st.header("🛠️ Master Data Management")
     col_cust, col_job = st.columns(2)
     with col_cust:
-        st.subheader("👥 Customers")
-        new_cust = st.text_input("New Customer Name", key="m1")
-        if st.button("➕ Add Customer", key="b1"):
+        new_cust = st.text_input("New Customer Name", key="add_cust_master")
+        if st.button("➕ Add Customer"):
             if new_cust:
                 conn.table("customer_master").insert({"name": new_cust}).execute()
+                st.cache_data.clear()
                 st.rerun()
     with col_job:
-        st.subheader("🔢 Job Codes")
-        new_job = st.text_input("New Job Code", key="m2")
-        if st.button("➕ Add Job Code", key="b2"):
+        new_job = st.text_input("New Job Code", key="add_job_master")
+        if st.button("➕ Add Job Code"):
             if new_job:
                 conn.table("job_master").insert({"job_code": new_job}).execute()
+                st.cache_data.clear()
                 st.rerun()
