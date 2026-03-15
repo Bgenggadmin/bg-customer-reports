@@ -138,23 +138,29 @@ with tab1:
     last_data = {}
     if f_job:
         res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
-        if res.data:
+        if res and res.data:
             last_data = res.data[0]
             st.toast(f"Autofilled from Job: {f_job}", icon="🔄")
 
     with st.form("main_entry_form", clear_on_submit=True):
         st.subheader("📋 Project Details")
         c1, c2, c3 = st.columns(3)
-        f_cust = c1.selectbox("Customer", [""] + customers, index=customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0)
+        
+        f_cust = c1.selectbox("Customer", [""] + customers, 
+                             index=customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0)
         c2.text_input("Selected Job", value=f_job, disabled=True)
         f_eq = c3.text_input("Equipment Name", value=last_data.get('equipment', ""))
         
         c4, c5, c6 = st.columns(3)
         f_po_n = c4.text_input("PO Number", value=last_data.get('po_no', ""))
+        
         def safe_date(field):
             val = last_data.get(field)
-            try: return datetime.strptime(val, "%Y-%m-%d") if val else datetime.now()
-            except: return datetime.now()
+            try:
+                return datetime.strptime(val, "%Y-%m-%d") if val else datetime.now()
+            except:
+                return datetime.now()
+
         f_po_d = c5.date_input("PO Date", value=safe_date('po_date'))
         f_eng = c6.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
         
@@ -165,18 +171,19 @@ with tab1:
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
+        
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
-            opts = ["Pending", "NA", "In-Progress", "Completed", "Scheduled", "Hold"] 
+            opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
             prev_status = last_data.get(skey, "Pending")
             default_idx = opts.index(prev_status) if prev_status in opts else 0
-            m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
-            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"form_{nkey}")
+            
+            m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"{f_job}_{skey}")
+            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"{f_job}_{nkey}")
 
-        # --- PROGRESS STRIP INPUT ---
         st.divider()
         st.subheader("📈 Overall Progress")
-        f_progress = st.slider("Set Completion Percentage", 0, 100, value=int(last_data.get('overall_progress') or 0), step=5)
+        f_progress = st.slider("Completion %", 0, 100, value=int(last_data.get('overall_progress') or 0))
 
         st.divider()
         st.subheader("📸 Progress Capture")
@@ -195,10 +202,11 @@ with tab1:
                         **m_responses
                     }
                     res = conn.table("progress_logs").insert(entry_payload).execute()
-                    if cam_photo and res.data:
+                    if cam_photo and res and res.data:
                         file_path = f"{res.data[0]['id']}.jpg"
                         conn.client.storage.from_("progress-photos").upload(file_path, cam_photo.getvalue())
                     st.success("✅ Update Saved!")
+                    st.cache_data.clear()
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
