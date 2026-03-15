@@ -111,7 +111,8 @@ def generate_pdf(logs):
         except Exception: 
             pass
 
-    return pdf.output(dest='S').encode('latin-1')
+    # FIXED LINE: fpdf2 returns bytes directly when using dest='S'
+    return pdf.output(dest='S')
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
@@ -152,16 +153,15 @@ with tab1:
         m_responses = {}
         for label, skey, nkey in MILESTONE_MAP:
             col_stat, col_note = st.columns([1, 2])
-            opts = ["Pending", "NA", "In-Progress", "Completed", "Scheduled", "Hold"] # Simplified logic for speed
+            opts = ["Pending", "NA", "In-Progress", "Completed", "Scheduled", "Hold"] 
             prev_status = last_data.get(skey, "Pending")
             default_idx = opts.index(prev_status) if prev_status in opts else 0
             m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"form_{skey}")
             m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"form_{nkey}")
 
-        # --- NEW: PROGRESS STRIP INPUT ---
+        # --- PROGRESS STRIP INPUT ---
         st.divider()
         st.subheader("📈 Overall Progress")
-        # Safety: uses or 0 to prevent crash if last_data['overall_progress'] is NULL
         f_progress = st.slider("Set Completion Percentage", 0, 100, value=int(last_data.get('overall_progress') or 0), step=5)
 
         st.divider()
@@ -205,7 +205,6 @@ with tab2:
         st.download_button(label="📥 Download PDF Report", data=generate_pdf(data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
-                # --- NEW: VISUAL PROGRESS STRIP ---
                 prog_val = log.get('overall_progress') or 0
                 st.write(f"**Overall Progress: {prog_val}%**")
                 st.progress(int(prog_val) / 100)
