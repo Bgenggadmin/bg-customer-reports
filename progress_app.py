@@ -5,10 +5,12 @@ from fpdf import FPDF
 import requests
 from io import BytesIO
 from PIL import Image
+import tempfile
+import os
 
 # 1. SETUP
 st.set_page_config(page_title="B&G Hub 2.0", layout="wide")
-conn = st.connection("supabase", type=SupabaseConnection)
+conn = st.connection("supabase", type=SupabaseConnection, ttl=60)
 
 # 2. THE MASTER MAPPING
 HEADER_FIELDS = ["customer", "job_code", "equipment", "po_no", "po_date", "engineer", "po_delivery_date", "exp_dispatch_date"]
@@ -26,8 +28,20 @@ MILESTONE_MAP = [
 ]
 
 # --- DATA FETCHING ---
-customers = sorted([d['name'] for d in conn.table("customer_master").select("name").execute().data])
-jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
+@st.cache_data(ttl=600)
+def get_master_data():
+    try:
+        c_res = conn.table("customer_master").select("name").execute()
+        cust_list = sorted([d['name'] for d in c_res.data]) if c_res and c_res.data else []
+        
+        j_res = conn.table("job_master").select("job_code").execute()
+        job_list = sorted([d['job_code'] for d in j_res.data]) if j_res and j_res.data else []
+        
+        return cust_list, job_list
+    except Exception:
+        return [], []
+
+customers, jobs = get_master_data()
 
 # --- PDF ENGINE ---
 def generate_pdf(logs): # FIXED: Added function name
