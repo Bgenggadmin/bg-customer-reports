@@ -193,15 +193,23 @@ with tab1:
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         
+        # Inside the Milestone Loop
         for label, skey, nkey in MILESTONE_MAP:
-            col_stat, col_note = st.columns([1, 2])
-            opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
+            prog_key = f"{skey}_prog"
+            col_stat, col_prog, col_note = st.columns([1.5, 1, 2])
+    
+    # Status
+            opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed"]
             prev_status = last_data.get(skey, "Pending")
-            default_idx = opts.index(prev_status) if prev_status in opts else 0
-            
-            m_responses[skey] = col_stat.selectbox(label, opts, index=default_idx, key=f"{f_job}_{skey}")
-            m_responses[nkey] = col_note.text_input(f"Remarks for {label}", value=last_data.get(nkey, ""), key=f"{f_job}_{nkey}")
-
+            m_responses[skey] = col_stat.selectbox(label, opts, index=opts.index(prev_status) if prev_status in opts else 0, key=f"s_{f_job}_{skey}")
+    
+            # NEW: Manual Progress Slider
+            prev_prog = int(last_data.get(prog_key, 0))
+            m_responses[prog_key] = col_prog.slider("Prog %", 0, 100, value=prev_prog, key=f"p_{f_job}_{skey}")
+    
+    # Remarks
+            m_responses[nkey] = col_note.text_input("Remarks", value=last_data.get(nkey, ""), key=f"n_{f_job}_{skey}")
+        
         # Removed here overall progress
         
         st.divider()
@@ -284,11 +292,21 @@ with tab2:
                     c2.metric("PO No", log.get('po_no', 'N/A'))
                     c3.metric("Dispatch", log.get('exp_dispatch_date', 'N/A'))
                     st.markdown("---")
+                    # Inside the Archive Expander Loop
                     for label, skey, nkey in MILESTONE_MAP:
-                        cs, cr = st.columns([1, 2])
-                        cs.write(f"**{label}:** {log.get(skey, 'Pending')}")
-                        cr.write(f"_{log.get(nkey, '-')}_")
-                    
+                        prog_key = f"{skey}_prog"
+                        c_stat, c_prog, c_rem = st.columns([1.5, 1, 1.5])
+    
+                        val = int(log.get(prog_key, 0))
+    
+                        c_stat.write(f"**{label}:** {log.get(skey, 'Pending')}")
+    
+                        # Display the Progress Bar (Blue by default)
+                        c_prog.progress(val / 100)
+                        c_prog.caption(f"{val}%")
+    
+                        c_rem.write(f"_{log.get(nkey, '-')}_")
+                                        
                     photo_name = f"{log.get('id')}.jpg"
                     photo_url = conn.client.storage.from_("progress-photos").get_public_url(photo_name)
                     st.image(photo_url, caption=f"Job: {log.get('job_code')}", width=160)
