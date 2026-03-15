@@ -1,12 +1,6 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 from datetime import datetime
-from fpdf import FPDF
-import requests
-from io import BytesIO
-from PIL import Image
-import tempfile
-import os
 
 # 1. SETUP
 st.set_page_config(page_title="B&G Hub 2.0", layout="wide")
@@ -41,6 +35,7 @@ customers, jobs = get_master_data()
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
+# --- TAB 1: NEW ENTRY ---
 with tab1:
     st.subheader("📋 Select Project")
     f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
@@ -74,7 +69,6 @@ with tab1:
             prev_status = last_data.get(skey, "Pending")
             m_responses[skey] = col_stat.selectbox(label, opts, index=opts.index(prev_status) if prev_status in opts else 0, key=f"s_{f_job}_{skey}")
             
-            # SAFE DATA FETCH: Ensure it's an integer
             try: prev_p = int(last_data.get(prog_key, 0))
             except: prev_p = 0
             
@@ -83,7 +77,6 @@ with tab1:
 
         if st.form_submit_button("🚀 SUBMIT UPDATE"):
             try:
-                # Logic: Average of all manual sliders
                 all_vals = [m_responses[f"{m[1]}_prog"] for m in MILESTONE_MAP]
                 overall_avg = sum(all_vals) // len(all_vals)
                 
@@ -97,30 +90,52 @@ with tab1:
                 st.cache_data.clear(); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
+# --- TAB 2: ARCHIVE ---
 with tab2:
     st.subheader("📂 Report Archive")
     res = conn.table("progress_logs").select("*").order("id", desc=True).execute()
     if res and res.data:
         for log in res.data:
             with st.expander(f"📦 Job: {log.get('job_code')} | {log.get('customer')}"):
-                # 1. Overall Progress Bar
-                try: ov_p = int(log.get('overall_progress', 0))
-                except: ov_p = 0
+                ov_p = int(log.get('overall_progress', 0))
                 st.write(f"**Total Completion: {ov_p}%**")
-                st.progress(min(max(ov_p / 100, 0.0), 1.0)) # Ensure value is between 0 and 1
+                st.progress(min(max(ov_p / 100.0, 0.0), 1.0))
                 
                 st.markdown("---")
-                # 2. Individual Milestone Bars
                 for label, skey, nkey in MILESTONE_MAP:
                     pk = f"{skey}_prog"
                     c_s, c_p, c_r = st.columns([1.5, 1, 1.5])
                     
-                    # Logic Fix: Convert to float safely
                     try: val = float(log.get(pk, 0))
                     except: val = 0.0
                     
                     c_s.write(f"**{label}:** {log.get(skey, 'Pending')}")
-                    # Render progress bar
-                    c_p.progress(min(max(val / 100.0, 0.0), 1.0))
-                    c_p.caption(f"{int(val)}%")
+                    with c_p:
+                        st.progress(min(max(val / 100.0, 0.0), 1.0))
+                        st.caption(f"{int(val)}%")
                     c_r.write(f"_{log.get(nkey, '-')}_")
+
+# --- TAB 3: MASTERS (The Missing Tab) ---
+with tab3:
+    st.subheader("🛠️ Master Management")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🏢 Add New Customer")
+        with st.form("add_customer", clear_on_submit=True):
+            new_cust = st.text_input("Customer Name")
+            if st.form_submit_button("Add Customer"):
+                if new_cust:
+                    conn.table("customer_master").insert({"name": new_cust}).execute()
+                    st.success(f"Added {new_cust}"); st.cache_data.clear(); st.rerun()
+                else: st.error("Name cannot be empty")
+
+    with col2:
+        st.markdown("### 🔢 Add New Job Code")
+        with st.form("add_job", clear_on_submit=True):
+            new_job = st.text_input("Job Code")
+            if st.form_submit_button("Add Job"):
+                if new_job:
+                    conn.table("job_master").insert({"job_code": new_job}).execute()
+                    st.success(f"Added {new_job}"); st.cache_data.clear(); st.rerun()
+                else: st.error("Job Code cannot be empty")
