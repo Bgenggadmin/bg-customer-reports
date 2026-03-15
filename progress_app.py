@@ -12,9 +12,7 @@ import os
 st.set_page_config(page_title="B&G Hub 2.0", layout="wide")
 conn = st.connection("supabase", type=SupabaseConnection, ttl=60)
 
-# 2. THE MASTER MAPPING (Matches Supabase Column Names)
-HEADER_FIELDS = ["customer", "job_code", "equipment", "po_no", "po_date", "engineer", "po_delivery_date", "exp_dispatch_date"]
-
+# 2. THE MASTER MAPPING
 MILESTONE_MAP = [
     ("Drawing Submission", "draw_sub", "draw_sub_note"),
     ("Drawing Approval", "draw_app", "draw_app_note"),
@@ -60,16 +58,14 @@ with tab1:
         
         def safe_date(field):
             val = last_data.get(field)
-            try: return datetime.strptime(str(val)[:10], "%Y-%m-%d").date() if val else datetime.now().date()
-            except: return datetime.now().date()
-
+            try: return datetime.strptime(str(val)[:10], "%Y-%m-%d") if val else datetime.now()
+            except: return datetime.now()
         f_po_d = st.date_input("PO Date", value=safe_date('po_date'))
         
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         
-        # INPUT LOOP
         for label, skey, nkey in MILESTONE_MAP:
             prog_key = f"{skey}_prog"
             col_stat, col_prog, col_note = st.columns([1.5, 1, 2])
@@ -78,65 +74,53 @@ with tab1:
             prev_status = last_data.get(skey, "Pending")
             m_responses[skey] = col_stat.selectbox(label, opts, index=opts.index(prev_status) if prev_status in opts else 0, key=f"s_{f_job}_{skey}")
             
-            # Use try/except to handle cases where existing progress data might be null/string
+            # SAFE DATA FETCH: Ensure it's an integer
             try: prev_p = int(last_data.get(prog_key, 0))
             except: prev_p = 0
-                
+            
             m_responses[prog_key] = col_prog.slider("Prog %", 0, 100, value=prev_p, key=f"p_{f_job}_{skey}")
             m_responses[nkey] = col_note.text_input("Remarks", value=last_data.get(nkey, ""), key=f"n_{f_job}_{skey}")
 
-        if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
-            if not f_cust or not f_job:
-                st.error("Select Job/Customer!")
-            else:
-                try:
-                    # Logic: Average of all manual sliders
-                    all_vals = [m_responses[f"{m[1]}_prog"] for m in MILESTONE_MAP]
-                    overall_avg = sum(all_vals) // len(all_vals)
-                    
-                    entry_payload = {
-                        "customer": f_cust, "job_code": f_job, "equipment": f_eq,
-                        "po_date": str(f_po_d), "overall_progress": overall_avg,
-                        **m_responses
-                    }
-                    conn.table("progress_logs").insert(entry_payload).execute()
-                    st.success(f"✅ Saved! Overall Completion: {overall_avg}%")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e: st.error(f"Error: {e}")
+        if st.form_submit_button("🚀 SUBMIT UPDATE"):
+            try:
+                # Logic: Average of all manual sliders
+                all_vals = [m_responses[f"{m[1]}_prog"] for m in MILESTONE_MAP]
+                overall_avg = sum(all_vals) // len(all_vals)
+                
+                entry_payload = {
+                    "customer": f_cust, "job_code": f_job, "equipment": f_eq,
+                    "po_date": str(f_po_d), "overall_progress": overall_avg,
+                    **m_responses
+                }
+                conn.table("progress_logs").insert(entry_payload).execute()
+                st.success(f"✅ Saved! Overall: {overall_avg}%")
+                st.cache_data.clear(); st.rerun()
+            except Exception as e: st.error(f"Error: {e}")
 
 with tab2:
     st.subheader("📂 Report Archive")
     res = conn.table("progress_logs").select("*").order("id", desc=True).execute()
-    
     if res and res.data:
         for log in res.data:
             with st.expander(f"📦 Job: {log.get('job_code')} | {log.get('customer')}"):
-                # 1. Overall Bar
+                # 1. Overall Progress Bar
                 try: ov_p = int(log.get('overall_progress', 0))
                 except: ov_p = 0
-                st.write(f"**Total Project Completion: {ov_p}%**")
-                st.progress(ov_p / 100)
+                st.write(f"**Total Completion: {ov_p}%**")
+                st.progress(min(max(ov_p / 100, 0.0), 1.0)) # Ensure value is between 0 and 1
                 
                 st.markdown("---")
-                
-                # 2. Individual Milestone Bars (Fixed Column Alignment)
+                # 2. Individual Milestone Bars
                 for label, skey, nkey in MILESTONE_MAP:
                     pk = f"{skey}_prog"
                     c_s, c_p, c_r = st.columns([1.5, 1, 1.5])
                     
-                    # Logic Fix: Fetch value safely and convert to float for progress bar
-                    try: 
-                        val = float(log.get(pk, 0)) 
-                    except: 
-                        val = 0.0
-                        
+                    # Logic Fix: Convert to float safely
+                    try: val = float(log.get(pk, 0))
+                    except: val = 0.0
+                    
                     c_s.write(f"**{label}:** {log.get(skey, 'Pending')}")
-                    
-                    # This line renders the visual bar
-                    c_p.progress(val / 100.0)
+                    # Render progress bar
+                    c_p.progress(min(max(val / 100.0, 0.0), 1.0))
                     c_p.caption(f"{int(val)}%")
-                    
                     c_r.write(f"_{log.get(nkey, '-')}_")
-    else: 
-        st.warning("No records found in database.")
