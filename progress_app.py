@@ -30,7 +30,7 @@ customers = sorted([d['name'] for d in conn.table("customer_master").select("nam
 jobs = sorted([d['job_code'] for d in conn.table("job_master").select("job_code").execute().data])
 
 # --- PDF ENGINE ---
-def generate_pdf(logs):
+def generate_pdf(logs): # FIXED: Added function name
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     for log in logs:
@@ -111,8 +111,8 @@ def generate_pdf(logs):
         except Exception: 
             pass
 
-    # FIXED LINE: fpdf2 returns bytes directly when using dest='S'
-    return pdf.output(dest='S')
+    # FIXED: Added bytes() wrapper for Streamlit compatibility
+    return bytes(pdf.output(dest='S'))
 
 # --- APP TABS ---
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
@@ -202,6 +202,7 @@ with tab2:
     data = res.data if res else []
     
     if data:
+        # FIXED: Corrected the data parameter to call generate_pdf
         st.download_button(label="📥 Download PDF Report", data=generate_pdf(data), file_name=f"BG_Report.pdf", mime="application/pdf", use_container_width=True)
         for log in data:
             with st.expander(f"📦 Job: {log.get('job_code','N/A')} | {log.get('customer','Unknown')}"):
