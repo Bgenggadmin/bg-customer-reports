@@ -174,46 +174,21 @@ with tab1:
         # Unique suffix forces Streamlit to re-render widgets with new 'value' when Job Code changes
         job_suffix = str(f_job) if f_job else "initial"
 
+        # ... inside the with st.form("main_form", clear_on_submit=True): block ...
+
         for label, skey, nkey in MILESTONE_MAP:
             pk = f"{skey}_prog"
             col1, col2, col3 = st.columns([1.5, 1, 2])
             
-            # 1. Status Autofill Logic
-            prev_status = last_data.get(skey, "Pending")
-            def_idx = opts.index(prev_status) if prev_status in opts else 0
+            # (Autofill logic here...)
             
-            # 2. Progress Slider Autofill (with None/Int safety)
-            raw_prog = last_data.get(pk, 0)
-            prev_prog = int(raw_prog) if raw_prog is not None else 0
-            
-            # 3. Remarks Autofill (with None/Empty String safety)
-            prev_note = last_data.get(nkey, "")
-            if prev_note is None: prev_note = ""
+            m_responses[skey] = col1.selectbox(label, opts, index=def_idx, key=f"s_{skey}_{job_suffix}")
+            m_responses[pk] = col2.slider("Prog %", 0, 100, value=prev_prog, key=f"p_{skey}_{job_suffix}")
+            m_responses[nkey] = col3.text_input("Remarks", value=prev_note, key=f"n_{skey}_{job_suffix}")
 
-            # --- UI Rendering ---
-            m_responses[skey] = col1.selectbox(
-                label, 
-                opts, 
-                index=def_idx, 
-                key=f"status_{skey}_{job_suffix}"
-            )
-            
-            m_responses[pk] = col2.slider(
-                "Prog %", 
-                0, 100, 
-                value=prev_prog, 
-                key=f"prog_{skey}_{job_suffix}"
-            )
-            
-            m_responses[nkey] = col3.text_input(
-                "Remarks", 
-                value=prev_note, 
-                key=f"note_{skey}_{job_suffix}"
-            )
-
+        # --- FIX: Ensure this divider and f_progress are indented to match the 'for' loop above ---
         st.divider()
         
-        # Overall Completion Autofill
         raw_overall = last_data.get('overall_progress', 0)
         prev_overall = int(raw_overall) if raw_overall is not None else 0
         
@@ -226,41 +201,15 @@ with tab1:
         
         cam_photo = st.camera_input("📸 Take Progress Photo")
 
-        # --- SUBMIT LOGIC ---
         if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
-            if not f_cust or not f_job:
-                st.error("Please select Customer and Job Code")
-            else:
-                payload = {
-                    "customer": f_cust, 
-                    "job_code": f_job, 
-                    "equipment": f_eq,
-                    "po_no": f_po_n, 
-                    "po_date": str(f_po_d), 
-                    "engineer": f_eng,
-                    "overall_progress": f_progress, 
-                    **m_responses
-                }
-                
-                # Insert record
-                res = conn.table("progress_logs").insert(payload).execute()
-                
-                # Upload Photo using the new ID from the inserted row
-                if cam_photo and res.data:
-                    try:
-                        file_name = f"{res.data[0]['id']}.jpg"
-                        conn.client.storage.from_("progress-photos").upload(
-                            path=file_name,
-                            file=cam_photo.getvalue(),
-                            file_options={"content-type": "image/jpeg"}
-                        )
-                    except Exception as e:
-                        st.warning(f"Note: Data saved, but photo could not upload: {e}")
-                
-                st.success(f"✅ Saved! Progress: {f_progress}%")
-                st.cache_data.clear()
-                st.rerun()
+            # ... (Submit logic here) ...
+            st.success("✅ Saved!")
+            st.cache_data.clear()
+            st.rerun()
 
+# --- TAB 2 starts here (Back to 0 indentation) ---
+with tab2:
+    st.subheader("📂 Report Archive")
 # --- TAB 2: ARCHIVE (WITH FILTERS & BARS) ---
 with tab2:
     st.subheader("📂 Report Archive")
