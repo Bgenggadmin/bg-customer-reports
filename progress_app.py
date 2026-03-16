@@ -88,11 +88,12 @@ customers, jobs = get_master_data()
 
 tab1, tab2, tab3 = st.tabs(["📝 New Entry", "📂 Archive", "🛠️ Masters"])
 
-# --- TAB 1: NEW ENTRY (WITH FULL AUTOFILL) ---
+# --- TAB 1: NEW ENTRY ---
 with tab1:
     st.subheader("📋 Project Update")
     f_job = st.selectbox("Job Code", [""] + jobs, key="job_lookup")
     last_data = {}
+    
     if f_job:
         res = conn.table("progress_logs").select("*").eq("job_code", f_job).order("id", desc=True).limit(1).execute()
         if res and res.data: 
@@ -101,10 +102,15 @@ with tab1:
 
     with st.form("main_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
-        f_cust = c1.selectbox("Customer", [""] + customers, index=customers.index(last_data['customer'])+1 if last_data.get('customer') in customers else 0)
+        # Fix: Safely handle index for customer lookup
+        try:
+            c_idx = customers.index(last_data['customer']) + 1 if last_data.get('customer') in customers else 0
+        except:
+            c_idx = 0
+
+        f_cust = c1.selectbox("Customer", [""] + customers, index=c_idx)
         f_eq = c2.text_input("Equipment", value=last_data.get('equipment', ""))
         
-        # Additional Project Details Autofill
         c3, c4, c5 = st.columns(3)
         f_po_n = c3.text_input("PO Number", value=last_data.get('po_no', ""))
         
@@ -116,102 +122,39 @@ with tab1:
         f_po_d = c4.date_input("PO Date", value=safe_date('po_date'))
         f_eng = c5.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
 
-        # ... (Previous code for Customer, Equipment, etc.)
-
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
         
-        for label, skey, nkey in MILESTONE_MAP:
-            pk = f"{skey}_prog"
-            col1, col2, col3 = st.columns([1.5, 1, 2])
-            
-            # 1. Get previous values from last_data
-            prev_status = last_data.get(skey, "Pending")
-            prev_prog = int(last_data.get(pk, 0))
-            prev_remarks = last_data.get(nkey, "")
-
-            # 2. Calculate default index for status
-            def_idx = opts.index(prev_status) if prev_status in opts else 0
-            
-            # 3. FIX: Add f_job to the key to force refresh on job change
-            widget_suffix = f"{f_job}" if f_job else "default"
-            
-            m_responses[skey] = col1.selectbox(
-                label, 
-                opts, 
-                index=def_idx, 
-                key=f"s_{skey}_{widget_suffix}" 
-            )
-            
-            m_responses[pk] = col2.slider(
-                "Prog %", 
-                0, 100, 
-                value=prev_prog, 
-                key=f"p_{skey}_{widget_suffix}"
-            )
-            
-            m_responses[nkey] = col3.text_input(
-                "Remarks", 
-                value=prev_remarks, 
-                key=f"n_{skey}_{widget_suffix}"
-            )
-
-        st.divider()
-        # Apply the same key logic to the Overall Completion slider
-        f_progress = st.slider(
-            "📈 Overall Completion %", 
-            0, 100, 
-            value=int(last_data.get('overall_progress') or 0),
-            key=f"overall_slider_{f_job if f_job else 'none'}"
-        )
-# --- MILESTONE SECTION (Ensure this is inside the 'with st.form' block) ---
-        st.divider()
-        st.subheader("📊 Milestone Tracking")
-        m_responses = {}
-        opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
-        
-        # Unique suffix forces Streamlit to refresh widgets when Job Code changes
         job_suffix = str(f_job) if f_job else "initial"
 
         for label, skey, nkey in MILESTONE_MAP:
             pk = f"{skey}_prog"
             col1, col2, col3 = st.columns([1.5, 1, 2])
             
-            # 1. Autofill logic for Status
+            # Status & Progress Logic
             prev_status = last_data.get(skey, "Pending")
             def_idx = opts.index(prev_status) if prev_status in opts else 0
             
-            # 2. Autofill logic for Progress Slider
             raw_prog = last_data.get(pk, 0)
             prev_prog = int(raw_prog) if raw_prog is not None else 0
             
-            # 3. Autofill logic for Remarks
             prev_note = last_data.get(nkey, "")
             if prev_note is None: prev_note = ""
             
-            # UI Rendering
+            # UI Components
             m_responses[skey] = col1.selectbox(label, opts, index=def_idx, key=f"s_{skey}_{job_suffix}")
             m_responses[pk] = col2.slider("Prog %", 0, 100, value=prev_prog, key=f"p_{skey}_{job_suffix}")
             m_responses[nkey] = col3.text_input("Remarks", value=prev_note, key=f"n_{skey}_{job_suffix}")
 
         st.divider()
-        
-        # Overall Completion Calculation
         raw_overall = last_data.get('overall_progress', 0)
         prev_overall = int(raw_overall) if raw_overall is not None else 0
         
-        f_progress = st.slider(
-            "📈 Overall Completion %", 
-            0, 100, 
-            value=prev_overall,
-            key=f"overall_slider_{job_suffix}"
-        )
-        
+        f_progress = st.slider("📈 Overall Completion %", 0, 100, value=prev_overall, key=f"ov_{job_suffix}")
         cam_photo = st.camera_input("📸 Take Progress Photo")
 
-        # Submit Button - MUST be indented the same as st.divider() above
         if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
             if not f_cust or not f_job:
                 st.error("Please select Customer and Job Code")
@@ -223,19 +166,15 @@ with tab1:
                 }
                 res = conn.table("progress_logs").insert(payload).execute()
                 
-                # Image storage logic
                 if cam_photo and res.data:
-                    file_path = f"{res.data[0]['id']}.jpg"
-                    conn.client.storage.from_("progress-photos").upload(file_path, cam_photo.getvalue())
+                    file_id = res.data[0]['id']
+                    conn.client.storage.from_("progress-photos").upload(f"{file_id}.jpg", cam_photo.getvalue())
                 
                 st.success("✅ Saved!")
                 st.cache_data.clear()
                 st.rerun()
 
-# --- TAB 2 starts here (Back to 0 indentation) ---
-with tab2:
-    st.subheader("📂 Report Archive")
-# --- TAB 2: ARCHIVE (WITH FILTERS & BARS) ---
+# --- TAB 2: ARCHIVE ---
 with tab2:
     st.subheader("📂 Report Archive")
     f1, f2, f3 = st.columns(3)
@@ -256,7 +195,6 @@ with tab2:
     filtered_data = []
     for log in data:
         try:
-            # Filtering logic by duration
             raw_date = log.get('created_at') or log.get('po_date')
             log_date = datetime.strptime(raw_date[:10], "%Y-%m-%d").date()
             if report_type == "Current Week" and log_date.isocalendar()[1] != today.isocalendar()[1]: continue
@@ -274,7 +212,6 @@ with tab2:
                 st.write(f"**Overall Progress: {ov_p}%**")
                 st.progress(ov_p / 100)
                 
-                # Individual milestone bars
                 for label, skey, nkey in MILESTONE_MAP:
                     pk = f"{skey}_prog"
                     c_status, c_bar, c_note = st.columns([1.5, 1, 1.5])
@@ -286,7 +223,6 @@ with tab2:
                         st.caption(f"{m_prog}%")
                     c_note.write(f"_{log.get(nkey, '-')}_")
                 
-                # Display Photo
                 try:
                     photo_url = conn.client.storage.from_("progress-photos").get_public_url(f"{log.get('id')}.jpg")
                     st.image(photo_url, width=250, caption=f"Capture for Job {log.get('job_code')}")
