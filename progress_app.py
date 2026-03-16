@@ -116,6 +116,8 @@ with tab1:
         f_po_d = c4.date_input("PO Date", value=safe_date('po_date'))
         f_eng = c5.text_input("Responsible Engineer", value=last_data.get('engineer', ""))
 
+        # ... (Previous code for Customer, Equipment, etc.)
+
         st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
@@ -125,31 +127,139 @@ with tab1:
             pk = f"{skey}_prog"
             col1, col2, col3 = st.columns([1.5, 1, 2])
             
-            # Autofill Logic for Status
+            # 1. Get previous values from last_data
+            prev_status = last_data.get(skey, "Pending")
+            prev_prog = int(last_data.get(pk, 0))
+            prev_remarks = last_data.get(nkey, "")
+
+            # 2. Calculate default index for status
+            def_idx = opts.index(prev_status) if prev_status in opts else 0
+            
+            # 3. FIX: Add f_job to the key to force refresh on job change
+            widget_suffix = f"{f_job}" if f_job else "default"
+            
+            m_responses[skey] = col1.selectbox(
+                label, 
+                opts, 
+                index=def_idx, 
+                key=f"s_{skey}_{widget_suffix}" 
+            )
+            
+            m_responses[pk] = col2.slider(
+                "Prog %", 
+                0, 100, 
+                value=prev_prog, 
+                key=f"p_{skey}_{widget_suffix}"
+            )
+            
+            m_responses[nkey] = col3.text_input(
+                "Remarks", 
+                value=prev_remarks, 
+                key=f"n_{skey}_{widget_suffix}"
+            )
+
+        st.divider()
+        # Apply the same key logic to the Overall Completion slider
+        f_progress = st.slider(
+            "📈 Overall Completion %", 
+            0, 100, 
+            value=int(last_data.get('overall_progress') or 0),
+            key=f"overall_slider_{f_job if f_job else 'none'}"
+        )
+       st.divider()
+        st.subheader("📊 Milestone Tracking")
+        m_responses = {}
+        opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
+        
+        # Unique suffix forces Streamlit to re-render widgets with new 'value' when Job Code changes
+        job_suffix = str(f_job) if f_job else "initial"
+
+        for label, skey, nkey in MILESTONE_MAP:
+            pk = f"{skey}_prog"
+            col1, col2, col3 = st.columns([1.5, 1, 2])
+            
+            # 1. Status Autofill Logic
             prev_status = last_data.get(skey, "Pending")
             def_idx = opts.index(prev_status) if prev_status in opts else 0
             
-            m_responses[skey] = col1.selectbox(label, opts, index=def_idx, key=f"s_{skey}")
-            m_responses[pk] = col2.slider("Prog %", 0, 100, value=int(last_data.get(pk, 0)), key=f"p_{skey}")
-            m_responses[nkey] = col3.text_input("Remarks", value=last_data.get(nkey, ""), key=f"n_{skey}")
+            # 2. Progress Slider Autofill (with None/Int safety)
+            raw_prog = last_data.get(pk, 0)
+            prev_prog = int(raw_prog) if raw_prog is not None else 0
+            
+            # 3. Remarks Autofill (with None/Empty String safety)
+            prev_note = last_data.get(nkey, "")
+            if prev_note is None: prev_note = ""
+
+            # --- UI Rendering ---
+            m_responses[skey] = col1.selectbox(
+                label, 
+                opts, 
+                index=def_idx, 
+                key=f"status_{skey}_{job_suffix}"
+            )
+            
+            m_responses[pk] = col2.slider(
+                "Prog %", 
+                0, 100, 
+                value=prev_prog, 
+                key=f"prog_{skey}_{job_suffix}"
+            )
+            
+            m_responses[nkey] = col3.text_input(
+                "Remarks", 
+                value=prev_note, 
+                key=f"note_{skey}_{job_suffix}"
+            )
 
         st.divider()
-        f_progress = st.slider("📈 Overall Completion %", 0, 100, value=int(last_data.get('overall_progress') or 0))
+        
+        # Overall Completion Autofill
+        raw_overall = last_data.get('overall_progress', 0)
+        prev_overall = int(raw_overall) if raw_overall is not None else 0
+        
+        f_progress = st.slider(
+            "📈 Overall Completion %", 
+            0, 100, 
+            value=prev_overall,
+            key=f"overall_slider_{job_suffix}"
+        )
+        
         cam_photo = st.camera_input("📸 Take Progress Photo")
 
+        # --- SUBMIT LOGIC ---
         if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
             if not f_cust or not f_job:
                 st.error("Please select Customer and Job Code")
             else:
                 payload = {
-                    "customer": f_cust, "job_code": f_job, "equipment": f_eq,
-                    "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
-                    "overall_progress": f_progress, **m_responses
+                    "customer": f_cust, 
+                    "job_code": f_job, 
+                    "equipment": f_eq,
+                    "po_no": f_po_n, 
+                    "po_date": str(f_po_d), 
+                    "engineer": f_eng,
+                    "overall_progress": f_progress, 
+                    **m_responses
                 }
+                
+                # Insert record
                 res = conn.table("progress_logs").insert(payload).execute()
+                
+                # Upload Photo using the new ID from the inserted row
                 if cam_photo and res.data:
-                    conn.client.storage.from_("progress-photos").upload(f"{res.data[0]['id']}.jpg", cam_photo.getvalue())
-                st.success("✅ Saved!"); st.cache_data.clear(); st.rerun()
+                    try:
+                        file_name = f"{res.data[0]['id']}.jpg"
+                        conn.client.storage.from_("progress-photos").upload(
+                            path=file_name,
+                            file=cam_photo.getvalue(),
+                            file_options={"content-type": "image/jpeg"}
+                        )
+                    except Exception as e:
+                        st.warning(f"Note: Data saved, but photo could not upload: {e}")
+                
+                st.success(f"✅ Saved! Progress: {f_progress}%")
+                st.cache_data.clear()
+                st.rerun()
 
 # --- TAB 2: ARCHIVE (WITH FILTERS & BARS) ---
 with tab2:
