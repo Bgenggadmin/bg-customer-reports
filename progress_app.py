@@ -166,29 +166,39 @@ with tab1:
             value=int(last_data.get('overall_progress') or 0),
             key=f"overall_slider_{f_job if f_job else 'none'}"
         )
-       st.divider()
+# --- MILESTONE SECTION (Ensure this is inside the 'with st.form' block) ---
+        st.divider()
         st.subheader("📊 Milestone Tracking")
         m_responses = {}
         opts = ["Pending", "NA", "In-Progress", "Submitted", "Approved", "Ordered", "Received", "Hold", "Completed", "Planning", "Scheduled"]
         
-        # Unique suffix forces Streamlit to re-render widgets with new 'value' when Job Code changes
+        # Unique suffix forces Streamlit to refresh widgets when Job Code changes
         job_suffix = str(f_job) if f_job else "initial"
-
-        # ... inside the with st.form("main_form", clear_on_submit=True): block ...
 
         for label, skey, nkey in MILESTONE_MAP:
             pk = f"{skey}_prog"
             col1, col2, col3 = st.columns([1.5, 1, 2])
             
-            # (Autofill logic here...)
+            # 1. Autofill logic for Status
+            prev_status = last_data.get(skey, "Pending")
+            def_idx = opts.index(prev_status) if prev_status in opts else 0
             
+            # 2. Autofill logic for Progress Slider
+            raw_prog = last_data.get(pk, 0)
+            prev_prog = int(raw_prog) if raw_prog is not None else 0
+            
+            # 3. Autofill logic for Remarks
+            prev_note = last_data.get(nkey, "")
+            if prev_note is None: prev_note = ""
+            
+            # UI Rendering
             m_responses[skey] = col1.selectbox(label, opts, index=def_idx, key=f"s_{skey}_{job_suffix}")
             m_responses[pk] = col2.slider("Prog %", 0, 100, value=prev_prog, key=f"p_{skey}_{job_suffix}")
             m_responses[nkey] = col3.text_input("Remarks", value=prev_note, key=f"n_{skey}_{job_suffix}")
 
-        # --- FIX: Ensure this divider and f_progress are indented to match the 'for' loop above ---
         st.divider()
         
+        # Overall Completion Calculation
         raw_overall = last_data.get('overall_progress', 0)
         prev_overall = int(raw_overall) if raw_overall is not None else 0
         
@@ -201,11 +211,26 @@ with tab1:
         
         cam_photo = st.camera_input("📸 Take Progress Photo")
 
+        # Submit Button - MUST be indented the same as st.divider() above
         if st.form_submit_button("🚀 SUBMIT UPDATE", use_container_width=True):
-            # ... (Submit logic here) ...
-            st.success("✅ Saved!")
-            st.cache_data.clear()
-            st.rerun()
+            if not f_cust or not f_job:
+                st.error("Please select Customer and Job Code")
+            else:
+                payload = {
+                    "customer": f_cust, "job_code": f_job, "equipment": f_eq,
+                    "po_no": f_po_n, "po_date": str(f_po_d), "engineer": f_eng,
+                    "overall_progress": f_progress, **m_responses
+                }
+                res = conn.table("progress_logs").insert(payload).execute()
+                
+                # Image storage logic
+                if cam_photo and res.data:
+                    file_path = f"{res.data[0]['id']}.jpg"
+                    conn.client.storage.from_("progress-photos").upload(file_path, cam_photo.getvalue())
+                
+                st.success("✅ Saved!")
+                st.cache_data.clear()
+                st.rerun()
 
 # --- TAB 2 starts here (Back to 0 indentation) ---
 with tab2:
