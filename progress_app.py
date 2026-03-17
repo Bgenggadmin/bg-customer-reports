@@ -42,19 +42,18 @@ def generate_pdf(logs):
 
     for log in logs:
         pdf.add_page()
-        # Header Blue Bar
+        # Header Blue Background
         pdf.set_fill_color(0, 51, 102); pdf.rect(0, 0, 210, 25, 'F')
         if logo_path: pdf.image(logo_path, x=12, y=5, h=15)
         pdf.set_text_color(255, 255, 255); pdf.set_font("Arial", "B", 16)
         pdf.set_xy(70, 5); pdf.cell(130, 10, "B&G ENGINEERING INDUSTRIES", 0, 1, "L")
         pdf.set_font("Arial", "I", 10); pdf.set_xy(70, 14); pdf.cell(130, 5, "PROJECT PROGRESS REPORT", 0, 1, "L")
         
-        # Job Info Header
+        # Header Info Section
         pdf.set_text_color(0, 0, 0); pdf.set_font("Arial", "B", 10); pdf.set_xy(10, 30)
         pdf.cell(0, 8, f" JOB: {log.get('job_code','')} | ID: {log.get('id','')}", "B", 1, "L")
         pdf.ln(2); pdf.set_font("Arial", "B", 8); pdf.set_fill_color(240, 240, 240)
         
-        # Header Fields Table
         for i in range(0, len(HEADER_FIELDS), 2):
             f1 = HEADER_FIELDS[i]; f2 = HEADER_FIELDS[i+1] if i+1 < len(HEADER_FIELDS) else None
             pdf.cell(30, 7, f" {f1.replace('_',' ').title()}", 1, 0, 'L', True)
@@ -64,26 +63,25 @@ def generate_pdf(logs):
                 pdf.cell(65, 7, f" {str(log.get(f2,''))}", 1, 1, 'L')
             else: pdf.ln(7)
 
-        # --- NEW: OVERALL PROGRESS BAR IN PDF ---
-        pdf.ln(4)
+        # --- VISUAL OVERALL PROGRESS BAR ---
+        pdf.ln(5)
         ov_p = int(log.get('overall_progress', 0))
         pdf.set_font("Arial", "B", 10)
-        pdf.cell(40, 8, f"Overall Completion: {ov_p}%", 0, 0, 'L')
-        
-        # Draw Progress Bar Background (Grey)
-        pdf.set_fill_color(220, 220, 220)
-        pdf.rect(50, pdf.get_y() + 2, 140, 4, 'F')
-        # Draw Progress Bar Fill (Blue)
+        pdf.cell(50, 8, f"Overall Completion: {ov_p}%", 0, 0, 'L')
+        # Background Bar
+        pdf.set_fill_color(230, 230, 230)
+        pdf.rect(60, pdf.get_y() + 2, 130, 4, 'F')
+        # Filled Bar (Dark Blue)
         if ov_p > 0:
-            pdf.set_fill_color(0, 102, 204)
-            pdf.rect(50, pdf.get_y() + 2, (ov_p / 100) * 140, 4, 'F')
+            pdf.set_fill_color(0, 82, 164)
+            pdf.rect(60, pdf.get_y() + 2, (ov_p / 100) * 130, 4, 'F')
         pdf.ln(10)
 
         # Milestone Table Header
-        pdf.set_font("Arial", "B", 9); pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
+        pdf.ln(2); pdf.set_font("Arial", "B", 9); pdf.set_fill_color(0, 51, 102); pdf.set_text_color(255, 255, 255)
         pdf.cell(50, 8, " Milestone Item", 1, 0, 'L', True)
         pdf.cell(30, 8, " Status", 1, 0, 'C', True)
-        pdf.cell(30, 8, " Progress", 1, 0, 'C', True) # Added Progress Column
+        pdf.cell(30, 8, " Progress", 1, 0, 'C', True) # NEW COLUMN
         pdf.cell(80, 8, " Remarks", 1, 1, 'L', True)
         
         # Milestone Rows
@@ -95,17 +93,16 @@ def generate_pdf(logs):
             pdf.cell(50, 10, f" {label}", 1)
             pdf.cell(30, 10, f" {str(log.get(s_key, 'Pending'))}", 1, 0, 'C')
             
-            # --- NEW: MINI PROGRESS BAR PER ROW ---
+            # --- MINI PROGRESS BAR PER MILESTONE ---
             curr_x = pdf.get_x()
             curr_y = pdf.get_y()
             pdf.cell(30, 10, "", 1, 0) # Empty cell for border
-            # Draw tiny bar inside cell
-            pdf.set_fill_color(230, 230, 230)
+            pdf.set_fill_color(240, 240, 240) # Background
             pdf.rect(curr_x + 3, curr_y + 4, 24, 2, 'F')
             if m_p > 0:
-                pdf.set_fill_color(0, 153, 76) # Green for milestones
+                pdf.set_fill_color(0, 153, 76) # Green fill
                 pdf.rect(curr_x + 3, curr_y + 4, (m_p / 100) * 24, 2, 'F')
-            pdf.set_xy(curr_x + 30, curr_y) # Return cursor to end of cell
+            pdf.set_xy(curr_x + 30, curr_y) # Reset cursor position
             
             pdf.cell(80, 10, f" {str(log.get(n_key,'-'))}", 1, 1)
 
